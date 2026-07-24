@@ -57,7 +57,8 @@ The install script will unpack the peak lists, expanding the total size to about
 
 To run nmrdbsearch from any directory, add this to ~/.bashrc:
 
-```alias nmrdbsearch="/path/to/nmrdbsearch/nmrdbsearch"
+```sh
+alias nmrdbsearch="/path/to/nmrdbsearch/nmrdbsearch"
 ```
 
 where /path/to/ should be replaced with the location of the nmrdbsearch directory.
@@ -68,7 +69,8 @@ where /path/to/ should be replaced with the location of the nmrdbsearch director
 
 nmrdbsearch comes with sgrep-1.0 (https://sgrep.sourceforge.net/) in its top-level directory. It should work automatically without further action. If desired, sgrep can be aliased for general use by adding this to ~/.bashrc:
 
-```alias sgrep="/path/to/nmrdbsearch/sgrep-1.0/sgrep"
+```sh
+alias sgrep="/path/to/nmrdbsearch/sgrep-1.0/sgrep"
 ```
 
 where /path/to/ should be replaced with the location of the nmrdbsearch directory.
