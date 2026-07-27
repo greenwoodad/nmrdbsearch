@@ -1,0 +1,1112 @@
+#!/bin/bash
+
+# nmrdbsearch
+# Copyright 2026 University of Cincinnati
+#
+# This script searches various NMR shift databases (NP-MRD, NMRBank, NMRexp, or IMPUR) for matches to a peak list.
+# Supports 1D (1H,13C,31P,19F,11B,29Si) and 2D (1H/X) data. Output includes various summary/result files and molecule images.
+
+# To do: 
+#        maybe HK for all 200
+#        deal with 13C referencing for H2O/D2O
+#        index peak lists? make alternative peaklist files for faster DBs?
+#        add hits/# searched signals to output (maybe save this for html)
+#        test everything including solvent stuff
+#        probably best not to bump all the non-IMPUR hits out -- maybe don't count them in best_results  but then just drop them from the image by default at least
+#       attributions, email some head honchos
+#        check to see if this identifies 2D peak lists (1D and 2D) from TS2, TS3, TS4, TS5 properly. 1D is clearly fine...
+#        check manual and MNova peak lists again, 1D and 2D
+set -u
+export LC_ALL=C # Use C locale for speed
+
+####################################################
+# ------------ PARAMETERS AND DEFAULTS ------------#
+####################################################
+
+Input=""              # Input file (.xml or .txt, looks in pdata/1 by default)
+dbstring='ALL'        # Database to search: NP, IMPUR, NMRBank, NMRexp, or ALL
+Dimension=""          # Input data format: '1D' or '2D'; auto-detected if unset
+opsolvent=""          # Override solvent (else detected from acqu file)
+acqusolvent=""        # Solvent detected from acqu file
+optol1=""             # Override nuc1 tolerance (else default used)
+optol2=""             # Override nuc2 tolerance (else default used)
+nuc1=""               # Direct dimension nucleus (1H, 13C, etc)
+nuc2=""               # Indirect dimension nucleus (for 2D)
+tolerance1=0.03       # 1H tolerance default (ppm)
+tolerance2=0.3        # 13C tolerance default (ppm)
+tolerance3=1.0        # Default tolerance for 31P, 19F, 11B, 29Si
+decprec1='%0.2f'      # Precision when printing f1 ppm values
+decprec2='%0.1f'      # Precision when printing f2 ppm values
+maxresults=20         # Max results in output files (besides full summaries)
+maxaccessions=200     # Max accessions for pure mode
+datadirectory=""      # Where pdata and acqu are found; defaults to PWD
+mixturemode='n'       # 'y' = all hits, 'n' = consider maxaccessions at most
+impur_in_img='n'      # 'y' = for ALL db, include IMPUR results in image
+verbose='n'           # 'y' = more output
+
+# Folders and tools
+nmrdbsearchdir="folder_goes_here" #location of nmrdbsearch
+grepcommand="$nmrdbsearchdir/sgrep-1.0/sgrep"         #location of sgrep
+
+####################################################
+# ------------------- FUNCTIONS -------------------#
+####################################################
+
+# Draw a progress bar
+draw_progress() {
+    local current=$1 total=$2
+    local bar_width=50
+    local percent=$(( 100 * current / total ))
+    local filled=$(( bar_width * current / total ))
+    printf -v fill "%${filled}s"
+    printf -v empty "%$((bar_width - filled))s"
+    printf "\rProgress: [${fill// /#}${empty// /-}] %d%% (%d/%d)" "$percent" "$current" "$total"
+}
+
+# Hopcroft-Karp bipartite matching for one-to-one matches (searched peak can't match multiple DB peaks and visa versa)
+hopcroft_karp_match() {
+    local a_values="$1"
+    local b_values="$2"
+    local tol="$3"
+    local scale=10000 #used to transform shifts into integers
+
+    # Read A and B into arrays
+    IFS=$'\n' read -rd '' -a A <<< "$a_values"
+    IFS=$'\n' read -rd '' -a B <<< "$b_values"
+    local nA=${#A[@]} nB=${#B[@]} #length of arrays
+
+    # Pre-scale the tolerance (so we can work with integers)
+    local itol=$(echo "$tol * $scale / 1" | bc)
+
+    # This uses awk to grab only the first number (1H in case of 2D data) before the comma and scale it (so we can work with integers)
+    iA=($(awk -v s="$scale" '{for(i=1;i<=NF;i++) { split($i, a, ","); print int(a[1]*s) }}' <<< "${A[*]}"))
+    iB=($(awk -v s="$scale" '{for(i=1;i<=NF;i++) { split($i, a, ","); print int(a[1]*s) }}' <<< "${B[*]}"))
+    
+    # Build adjacency list 
+    declare -A adj
+    for i in "${!iA[@]}"; do
+        adj[$i]=""
+        local val_a=${iA[i]}
+        for j in "${!iB[@]}"; do
+            local val_b=${iB[j]}
+            local diff=$(( val_a > val_b ? val_a - val_b : val_b - val_a ))
+            if (( diff <= itol )); then
+                adj[$i]+="$j " #all values in B within tolerance of this value from A
+            fi
+        done
+    done
+    
+    # Initialize matchings and distances
+    local -a pairA pairB dist
+    for ((i=0;i<nA;i++)); do pairA[i]=-1; done
+    for ((j=0;j<nB;j++)); do pairB[j]=-1; done
+    
+    # Breadth-first search
+    bfs() {
+        local queue=() i u v p
+        for ((i=0;i<nA;i++)); do
+            if [[ ${pairA[i]} -eq -1 ]]; then dist[i]=0; queue+=($i); else dist[i]=-1; fi
+        done
+        local found=1
+        while ((${#queue[@]})); do
+            local u="${queue[0]}"
+            queue=("${queue[@]:1}")
+            [[ -z "$u" ]] && continue # Skip if u is empty or out of bounds
+            for v in ${adj[$u]:-}; do
+                v=$(echo "$v" | tr -d '[:space:]') # Clean and validate v is an integer
+                [[ ! "$v" =~ ^[0-9]+$ ]] && continue
+                if [[ -z "${pairB[v]+exists}" ]]; then continue; fi # Check if index exists in pairB to prevent unbound variable crash
+
+                local p=${pairB[v]}
+                if [[ -n "$p" && "$p" =~ ^[0-9]+$ ]] && [[ ${dist[$p]:--1} -eq -1 ]]; then
+                    dist[$p]=$((dist[u]+1)); queue+=($p)
+                elif [[ "$p" -eq -1 ]]; then found=0; fi
+            done
+        done
+        return $found
+    }
+    # Depth-first search
+    dfs() {
+        local u=$1 v p
+        [[ -z "$u" || ! "$u" =~ ^[0-9]+$ ]] && return 1
+        for v in ${adj[$u]:-}; do
+            v=$(echo "$v" | tr -d '[:space:]')
+            [[ ! "$v" =~ ^[0-9]+$ ]] && continue
+            if [[ -z "${pairB[v]+exists}" ]]; then continue; fi
+            local p=${pairB[v]}
+            # Hopcroft-Karp logic: if unmatched (-1) OR valid layered path via its match
+            if [[ "$p" -eq -1 ]] || { [[ "$p" =~ ^[0-9]+$ ]] && [[ ${dist[$p]:--1} -eq $((dist[u]+1)) ]] && dfs "$p"; }; then
+                pairA[u]=$v; pairB[v]=$u; return 0
+            fi
+        done
+        dist[$u]=-1; return 1
+    }
+    # Hopcroft-Karp main loop
+    local result=0
+    while bfs; do
+        for ((i=0;i<nA;i++)); do
+            if [[ ${pairA[i]} -eq -1 ]]; then
+                if dfs $i; then ((result++)); fi
+            fi
+        done
+    done
+    echo "$result"
+    
+}
+
+# Get solvent string 
+Get_Solvent() {
+    local inputsolvent=$1
+    local solvtable="acetic Acetic Acetic-H4\n           
+        acetone Acetone Acetone-H6\n           
+        CD2Cl2 CH2Cl2 CD2Cl2 Dichloromethane\n         
+        CD3CN CH3CN Acetonitrile CD3CN CD3CN_SPE\n         
+        CDCl3 Chloroform CHCl3 CDCl3\n          
+        C6D6 C6D6 Benzene C6H6 C6D6_smalvol C6D6+Dioxane\n         
+        DMSO DMSO DMSO-H6 HDMSO\n           
+        DMF DMF DMF-H7\n            
+        D2O Plasma H2O H2O+D2O H2O+D2O_salt Urine Water D2O D2O_salt Juice T_H2O+D2O+Me4NCl T_H2O+D2O+NaAc T_H2O+D2O+Pivalate\n  
+        MeOD MeOD Methanol Methanol-H4 CH3OH+D2O CH3CN+D2O CD3OD_SPE T_MeOD\n       
+        pyridine Pyr Pyr-H5 Pyridine C5D5N\n           
+        THF-d8 THF THF-H8\n            
+        PhMe-d8 Tol Tol-H8 Toluene\n
+        all All ALL"
+    solvent=$(echo "$solvtable" | sed 's/^[[:space:]]*//' | grep -w "$inputsolvent" | cut -f1 -d' ' | tr -d '[:space:]' )
+    echo "$solvent"
+}
+# Show usage/help
+Show_Usage() {
+    echo ""
+    echo "Usage: nmrdbsearch [OPTIONS]... path/to/data (current directory used if not specified)"
+    echo ""
+    echo "Options"
+    echo " -h, -?, --help      Show this help message."
+    echo " -i, --input         Set input peaklist file (.txt or .xml)."
+    echo " -d, --database      Set database: NP, NMRBank, NMRexp, IMPUR, or ALL."
+    echo " -s, --solvent       Set solvent (CDCl3, DMSO, D2O, all, etc)."
+    echo " -dim, --dimension   Set '1D' or '2D'"
+    echo " -n, --nucleus       Set to '1H' '13C' '31P' '19F' '11B' or '29Si'"
+    echo " -n2, --nucleus2     Set to '13C' '31P' '19F' '11B' or '29Si'"
+    echo " -t, --tolerance     Set tolerance for matching peaks."
+    echo " -t2, --tolerance2   Set tolerance for 2D indirect dimension."
+    echo " -m, --mixmode       Specify if running on complex mixture (slow for large databases)."
+    echo " -im, --impurinc     Include IMPUR results in image for ALL database searches."
+    echo " -v, --verbose       Displays additional messages as the program runs."
+    echo ""
+    echo "For more information, see the README:"
+    echo "https://github.com/greenwoodad/nmrdbsearch/README.md"
+    echo ""
+}
+
+# Parse command line flags
+parse_flags() {
+    while [[ ! -z "${1-}" ]] ; do
+        case "$1" in
+            -h|-\?|--help) Show_Usage; exit 1 ;;
+            -i|--input) shift; Input="$1" ;;
+            -d|--database) shift; dbstring="$1" ;;
+            -s|--solvent) shift; opsolvent="$1" ;;
+            -dim|--dimension) shift; Dimension="$1" ;;
+            -n|--nucleus) shift; nuc1="$1" ;;
+            -n2|--nucleus2) shift; nuc2="$1" ;;
+            -t|--tolerance) shift; optol1="$1" ;;
+            -t2|--tolerance2) shift; optol2="$1" ;;
+            -m|--mixmode) shift; mixturemode='y' ;;
+            -im|--impureinc) shift; impur_in_img='y' ;;
+            -v|--verbose) shift; verbose='y' ;;
+            -*) echo "Unknown option: \"$1\""; Show_Usage; exit 1 ;;
+            *) datadirectory="$1" ;;
+        esac
+        shift
+    done
+}
+
+#Remove temporary files
+cleanup() {
+    rm "$search_output" 2>/dev/null
+    rm "$search_output_full.for" 2>/dev/null
+    rm "$search_output_full" 2>/dev/null
+    rm "$search_output_single" 2>/dev/null
+    rm "$search_output_dbpeaks" 2>/dev/null
+    rm "$hits_temp" 2>/dev/null
+    rm "$X_hits_temp" 2>/dev/null
+    rm "$accessionsfile" 2>/dev/null
+    rm "$SMILESfile" 2>/dev/null
+}
+
+####################################################
+# ----------------- MAIN SCRIPT -------------------#
+####################################################
+
+# 1. Parse flags and set up directory paths
+parse_flags "$@"
+
+# Set datadirectory if not provided
+if [ -z "$datadirectory" ]; then
+    datadirectory="$(pwd)"
+fi
+[[ "$verbose" == 'y' ]] && echo "datadirectory is $datadirectory"
+
+# File paths (input, output, temp)
+input_txt="${datadirectory}/pdata/1/peak.txt"                             #input file, simple list of shifts or mnova/topspin peak table
+input_xml="${datadirectory}/pdata/1/peaklist.xml"                         #xml peaklist from Topspin
+acqufile="${datadirectory}/acqu"                                          #acqu file, Bruker data - used to get solvent and nuclei
+resultsfolder="${datadirectory}/nmrdbsearch/"                             #destination directory for search results
+full_search_summary="${resultsfolder}full_summary_${dbstring}"            #one of four output files, this shows top $maxaccessions results
+hitssorted_summary="${resultsfolder}hitssorted_full_summary_${dbstring}"  #second of four output files, sorted by hits
+best_hits_summary="${resultsfolder}best_hits_summary_${dbstring}"         #third output file, where hits are defined as one-to-one correspondance between input and db shifts
+shiftordered_results="${resultsfolder}shiftordered_results_${dbstring}"   #fourth output file, sorted by peak
+structuressvg="${resultsfolder}structures_${dbstring}.svg"                #svg image of 20 top structures
+#temporary files
+hits_temp="${resultsfolder}hits.tmp"
+X_hits_temp="${resultsfolder}X_hits.tmp"
+search_output_full="${resultsfolder}search_output_full.tmp"
+search_output="${resultsfolder}search_output.tmp"
+search_output_dbpeaks="${resultsfolder}search_output_dbpeaks.tmp"
+search_output_single="${resultsfolder}search_output_single.tmp"
+accessionsfile="${resultsfolder}accessions"
+SMILESfile="${resultsfolder}SMILES.smi"
+
+# Select database folder and special flags
+draw_molecules='y'
+hetsearch='n'
+largeDB='n'
+case "$dbstring" in
+    NMRBank) dbfolder='NMRBank' ;;
+    NP)      dbfolder='NP' ;;
+    NMRexp)  dbfolder='NMRexp' ; hetsearch='y'; largeDB='y' ;;
+    IMPUR)   dbfolder='IMPUR' ; mixturemode='y' ;;
+    ALL)     dbfolder='ALL' ; largeDB='y' ;;
+    *)       echo "Error: unknown database $dbstring."; cleanup; exit 1 ;;
+esac
+
+# Override default input file if one is provided
+if [ -n "$Input" ]; then
+    if [[ "$Input" == *.txt ]]; then
+        input_txt="$Input"; input_xml=""
+    elif [[ "$Input" == *.xml ]]; then
+        input_xml="$Input"; input_txt=""
+    else
+        echo "Error: Input file should be of .txt or .xml form"; cleanup; exit 1
+    fi
+fi
+
+# Ensure results directory exists
+if [ ! -d "$resultsfolder" ]; then
+    mkdir "$resultsfolder"
+fi
+
+####################################################
+# ------------ SOLVENT AND NUCLEI SETUP -----------#
+####################################################
+
+# if acqu file exists
+if [ -f "$acqufile" ]; then
+    # Get solvent from acqu file or override
+    acqusolvent=$(grep '##$SOLVENT=' "$acqufile" | sed 's/##$SOLVENT=//' | sed 's/[<>\t\r ]//g')
+    if [ -n "$opsolvent" ] && [ "$opsolvent" != "$acqusolvent" ]; then
+        echo "Warning: given solvent $opsolvent not the same as in acqu file ($acqusolvent). Using $opsolvent"
+        sleep 5
+        acqusolvent="$opsolvent"
+    fi
+    solvent=$(Get_Solvent "$acqusolvent") #get solvent string corresponding to acqusolvent 
+    # Get nuclei from acqu file or override
+    nuc1aq=$(grep '##$NUC1=' "$acqufile" | sed 's/.*##$NUC1=//' | sed 's/[<>\t\r ]//g')
+    nuc2aq=$(grep '##$NUC2=' "$acqufile" | sed 's/.*##$NUC2=//' | sed 's/[<>\t\r ]//g')
+    
+    if [ -z "$nuc1" ]; then
+        nuc1="$nuc1aq"
+    else
+        if [[ ! "$nuc1" == "$nuc1aq" ]]; then
+            echo "Error: Nucleus 1 is set as $nuc1 but acqu file indicates it is $nuc1aq"; cleanup; exit 1
+        fi
+    fi
+    
+    if [ -z "$nuc2" ]; then
+        nuc2="$nuc2aq";
+    else
+        if [[ ! "$nuc2" == "$nuc2aq" ]]; then
+            echo "Error: Nucleus 2 is set as $nuc2 but acqu file indicates it is $nuc2aq"; cleanup; exit 1
+        fi
+    fi
+else
+    if [ -n "$opsolvent" ]; then
+        solvent=$(Get_Solvent "$opsolvent") #get solvent string corresponding to opsolvent 
+    else
+        echo "No solvent given as option and no acqu file found in $acqufile, so using solvent=all."; 
+        solvent=$(Get_Solvent 'all') #get solvent string corresponding to opsolvent 
+    fi
+fi
+
+if [ -z "$nuc1" ]; then
+    echo "Error: Nucleus 1 is unset"; cleanup; exit 1    
+elif [[ -z "$opsolvent" && -z "$acqusolvent" ]]; then
+    echo "Error: Solvent is unset"; cleanup; exit 1    
+fi
+
+[[ "$verbose" == 'y' ]] && echo "solvent is set as $solvent"
+
+####################################################
+# ------------ NUMERIC FORMATTING -----------------#
+####################################################
+
+if [ "$nuc1" == '1H' ]; then
+    tolerance="$tolerance1"
+elif [ "$nuc1" == '13C' ]; then
+    tolerance="$tolerance2"
+elif [[ "$nuc1" == '31P' || "$nuc1" == '19F' || "$nuc1" == '11B' || "$nuc1" == '29Si' ]]; then
+    tolerance="$tolerance3"
+    if [ "$hetsearch" == 'n' ]; then
+        echo "Error: Nucleus $nuc1 not supported for database $dbstring. Switching to NMRexp database."
+        hetsearch='y'
+        dbstring='NMRexp'
+        dbfolder='NMRexp' 
+        largeDB='y' 
+    fi
+else
+    echo "Error: Nucleus $nuc1 is not supported. Use 1H, 13C, 19F, 31P, 11B, or 29Si."; cleanup; exit 1
+fi
+
+if [ -n "$optol1" ] && [ "$optol1" != "$tolerance" ]; then
+    echo "Using $optol1 for $nuc1 tolerance"
+    sleep 2
+    tolerance="$optol1"
+fi
+
+if [ -n "$optol2" ] && [ "$optol2" != "$tolerance2" ]; then
+    echo "Using $optol2 for $nuc2 tolerance"
+    sleep 2
+    tolerance2="$optol2"
+fi
+
+[[ "$Dimension" == '1' ]] && Dimension='1D'  #standardize value of Dimension here so user can input 1 or 2 if desired
+[[ "$Dimension" == '2' ]] && Dimension='2D'
+
+####################################################
+# --------- READ AND FORMAT PEAKLIST INPUT --------#
+####################################################
+
+# Identify and format input peaks
+unsorted_peaks="" #initialize peaks
+
+#Here Dimension and Input file are both specified, and Input is a simple list of peaks (1D) or pairs of peaks (2D)
+#with a filename ending in .txt
+if [[ "$Input" == *.txt && -n "$Dimension" ]]; then 
+   case "$Dimension" in
+    '1D')
+        unsorted_peaks=$(awk -v dim=1 '
+            BEGIN { OFS="," }
+            {   if (NF == 0) next
+                n = 0
+                d1 = d2 = ""
+
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ /^[0-9]*\.[0-9]+$/) {
+                        n++
+                        if (n == 1)      d1 = $i
+                        else if (n == 2) { d2 = $i; break }
+                    }
+                }
+
+                if (n >= 1) { #print first or first two doubles
+                    if (n >= 2) print d1, "\t"d2  
+                    else        print d1 }
+            }
+        ' FS="[\t ,]+" "$input_txt")
+        ;;
+    '2D')
+        unsorted_peaks=$(awk -v dim=2 '
+            BEGIN { OFS="," }
+            {   if (NF == 0) next
+
+                n = 0
+                d1 = d2 = ""
+
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ /^[0-9]*\.[0-9]+$/) {
+                        n++
+                        if (n == 1)      d1 = $i
+                        else if (n == 2) { d2 = $i; break }
+                    }
+                }
+
+                # For 2D: require two doubles
+                if (n >= 2) print d1, "\t"d2 }
+        ' FS="[\t ,]+" "$input_txt")
+        ;;
+esac
+elif [ -f "$input_xml" ]; then #Dimension isn't specified so we try to infer it from format of input
+    #this reads in Topspin style 1D peaklist.xml table
+    if grep -qs 'Peak1D' "$input_xml" ; then
+        Dimension='1D'
+        unsorted_peaks=$(awk '
+        BEGIN { OFS="," }
+        '1'=='1' { skip=0 }
+        /\/PeakList1DHeader/ { in_table=1; next }
+        $2 !~ /\./ { skip=1 }
+        in_table && skip==0 { print $2,"\t"$4 }
+        ' FS="\"" "$input_xml" ) 
+        [[ "$verbose" == 'y' ]] && echo "input file set to $input_xml, Dimension set to $Dimension"
+
+    #this reads in Topspin style 2D peaklist.xml table
+    elif grep -qs 'Peak2D' "$input_xml" ; then
+        Dimension='2D'
+        unsorted_peaks=$(awk '
+        BEGIN { OFS="," }
+        '1'=='1' { skip=0 }
+        /\/PeakList2DHeader/ { in_table=1; next }
+        $2 !~ /\./ { skip=1 }
+        in_table && skip==0 { print $4,"\t"$2 }
+        ' FS="\"" "$input_xml" ) 
+        [[ "$verbose" == 'y' ]] && echo "input file set to $input_xml, Dimension set to $Dimension"
+    fi
+elif [ -f "$input_txt" ]; then #try input_txt
+    #this is for Topspin style 2D peak.txt table
+    if grep -qs 'F2\[ppm\]' "$input_txt" ; then
+        Dimension='2D'
+        unsorted_peaks=$(awk '
+        BEGIN { OFS="," }
+        '1'=='1' { skip=0 }
+        /F2\[ppm\]/ { in_table=1; next }
+        $5 !~ /\./ { skip=1 }
+        in_table && NF>=3 && skip==0 { print $5,"\t"$6 }
+        ' FS="[\t ,]+" "$input_txt" ) 
+        [[ "$verbose" == 'y' ]] && echo "input file set to $input_txt, Dimension set to $Dimension"
+
+    #this reads in MNova style peak tables-- you can generate these by clicking "Copy Table" and then just pasting in a text file.
+    elif grep -qs 'f2' "$input_txt" ; then
+        Dimension='2D'
+        unsorted_peaks=$(awk '
+        BEGIN { OFS="," }
+        '1'=='1' { skip=0 }
+        /f2/ { in_table=1; next }
+        $3 !~ /\./ { skip=1 }
+        in_table && NF>=3 && skip==0 { print $2,"\t"$3 }
+        ' FS="[\t ,]+" "$input_txt" ) 
+        [[ "$verbose" == 'y' ]] && echo "input file set to $input_txt, Dimension set to $Dimension"
+
+    #this reads in MNova style peak tables-- you can generate these by clicking "Copy Table" and then just pasting in a text file.
+    elif grep -qs 'ppm' "$input_txt" ; then
+        Dimension='1D'
+        unsorted_peaks=$(awk '
+        BEGIN { OFS="," }
+        '1'=='1' { skip=0 }
+        /ppm/ { in_table=1; next }
+        $3 !~ /\./ { skip=1 }
+        in_table && NF>=3 && skip==0 { print $2,"\t"$3 }
+        ' FS="[\t ,]+" "$input_txt" ) 
+        [[ "$verbose" == 'y' ]] && echo "input file set to $input_txt, Dimension set to $Dimension"
+    fi
+fi
+
+if [ -z "$unsorted_peaks" ]; then
+    echo "Error: No peaks or input file not recognized. If using MNova, use 'copy table' and paste the full results (including header) into a file named peak.txt in pdata/1"
+    cleanup; exit 1
+fi
+
+currentpeaks=$(echo "$unsorted_peaks" | sort -t, -k1,1n)  #sort peaks from low to high
+f1peaks=$(echo "$currentpeaks" | cut -f1 -d',')           #This is just the peaks for 1D data (no amplitutes) and just the f1 peaks for 2D data
+num_data_peaks=$(wc -l <<< "$currentpeaks")               #count the peaks or pairs of peaks
+
+# Check for loss of peaks due to rounding/formatting collisions
+if [ "$Dimension" == '2D' ]; then
+    # format both dimensions and deduplicate
+    formatted_peaks=$(echo "$currentpeaks" | awk -F',' -v f1="$decprec1" -v f2="$decprec2" '
+        {
+            # strip whitespace around fields
+            gsub(/^[ \t]+|[ \t]+$/, "", $1)
+            gsub(/^[ \t]+|[ \t]+$/, "", $2)
+            p1 = $1 + 0; p2 = $2 + 0;
+            printf(f1","f2"\n", p1, p2)
+        }' | sort -u)
+
+    new_count=$(wc -l <<< "$formatted_peaks")
+
+    if [ "$new_count" -lt "$num_data_peaks" ]; then
+        echo "Warning: $((num_data_peaks - new_count)) 2D peaks (pairs) collapse when formatted to $decprec1 / $decprec2 and duplicates removed."
+        echo "         This may cause fewer effective peaks to be considered in matching."
+    fi
+
+else
+    # 1D case: only f1
+    formatted_peaks=$(echo "$f1peaks" | awk -v f1="$decprec1" '
+        {
+            gsub(/^[ \t]+|[ \t]+$/, "", $1)
+            p1 = $1 + 0;
+            printf(f1"\n", p1)
+        }' | sort -u)
+
+    new_count=$(wc -l <<< "$formatted_peaks")
+
+    if [ "$new_count" -lt "$num_data_peaks" ]; then
+        echo "Warning: $((num_data_peaks - new_count)) 1D peaks collapse when formatted to $decprec1 and duplicates removed."
+        echo "         This may cause fewer effective peaks to be considered in matching."
+        sleep 2
+    fi
+fi
+
+num_data_peaks="$new_count" #update num_data_peaks
+
+if [ "$Dimension" == '2D' ]; then
+    if [ -z "$nuc2" ]; then
+        echo "Error: Nucleus 2 is unset"; cleanup; exit 1    #Don't proceed if Dimension is set as 2D but nuc2 is undefined
+    fi
+fi
+    [[ "$verbose" == 'y' ]] && echo -e "Peaks read: \n$formatted_peaks"
+
+####################################################
+# ------- INITIALIZE OUTPUT AND TEMP FILES --------#
+####################################################
+
+>"$full_search_summary"
+>"$hitssorted_summary"
+>"$shiftordered_results"
+>"$best_hits_summary"
+>"$search_output_full"
+>"$search_output"
+>"$hits_temp"
+>"$X_hits_temp"
+>"$SMILESfile"
+>"$accessionsfile"
+
+echo "Finding matches"
+
+####################################################
+# ------------ MAIN SEARCH LOOP -------------------#
+####################################################
+
+counter=0
+uniques=''
+
+# For each peak (1D) or peak pair (2D), search the peaks_ files and record matches
+# Matches are many-to-one, that is, each peak/pair of peaks can (usually does) have multiple matches from the database
+# but each database entry that matches is only counted once (so for two experimental peaks that are very close together
+# their matches are not double counted)
+
+while IFS=$'\n' read -r line_data; do
+    >"$search_output_full.for"  # Ensure temp file is empty for each peak/pair
+
+    if [ "$Dimension" == '2D' ]; then
+        # Parse and format 2D peak info and tolerance windows
+        read -r current_peak1 maxshift1 minshift1 current_peak2 maxshift2 minshift2 < <(
+            awk -F, -v t1="$tolerance" -v t2="$tolerance2" -v f1="$decprec1" -v f2="$decprec2" '
+                {
+                    p1 = $1 + 0; p2 = $2 + 0;
+                    printf f1" "f1" "f1" "f2" "f2" "f2, p1, p1 + t1, p1 - t1, p2, p2 + t2, p2 - t2
+                }' <<< "$line_data"
+        )
+
+        # Skip TMS (0.0,0.0) peaks
+        if (( $(echo "$current_peak2 >= -($tolerance2) && $current_peak2 <= $tolerance2" | bc -l) )); then
+            if (( $(echo "$current_peak1 >= -($tolerance) && $current_peak1 <= $tolerance" | bc -l) )); then
+                [[ "$verbose" == 'y' ]] && echo "skipping value $current_peak1, $current_peak2"
+                ((counter++))
+                continue
+            fi
+        fi
+
+        # Search 1H and X peaks_ files for matches within the tolerance windows
+        peak_library="$nmrdbsearchdir/$dbfolder/peaks_${nuc1}_${solvent}"
+        [ ! -f "$peak_library" ] && { echo "$peak_library does not exist, exiting."; cleanup; exit 1; }
+        "$grepcommand" -n -- "${minshift1}:${maxshift1}" "$peak_library" > "$hits_temp"
+
+        peak_library="$nmrdbsearchdir/$dbfolder/peaks_${nuc2}_${solvent}"
+        [ ! -f "$peak_library" ] && { echo "$peak_library does not exist, exiting."; cleanup; exit 1; }
+        "$grepcommand" -n -- "${minshift2}:${maxshift2}" "$peak_library" > "$X_hits_temp"
+
+        # Intersect the two hit lists (by accession), format, and count matches
+        line_count=$(awk -F ',[ ]*' -v p1="$current_peak1" -v p2="$current_peak2" \
+            -v f1="$decprec1" -v f2="$decprec2" \
+            -v out_file="$search_output_full.for" '
+            { gsub(/\r/, "", $0); gsub(/^[ ]+/, "", $0); }
+            FNR==NR {
+                if ($2 != "") {
+                    x_shifts[$2] = (f2 ~ /%/) ? sprintf(f2, $1) : $1;
+                }
+                next
+            }
+            ($2 in x_shifts) {
+                h_shift = (f1 ~ /%/) ? sprintf(f1, $1) : $1;
+                print h_shift "," x_shifts[$2] "," $2 ", " p1 ", " p2 > out_file
+                count++
+            }
+            END { print count + 0 }
+        ' "$X_hits_temp" "$hits_temp")
+
+    else  # 1D data 
+        current_peak1=$(echo "${line_data}" | sed 's/,.*//' | bc -l | xargs printf "$decprec1")
+        maxshift1=$(echo "$current_peak1 + $tolerance" | bc -l | xargs printf "$decprec1")
+        minshift1=$(echo "$current_peak1 - $tolerance" | bc -l | xargs printf "$decprec1")
+
+        # Skip TMS peak (0.0)
+        if (( $(echo "$current_peak1 >= -($tolerance) && $current_peak1 <= $tolerance" | bc -l) )); then
+        [[ "$verbose" == 'y' ]] && echo "skipping value $current_peak1"
+            ((counter++))
+            continue
+        fi
+
+        peak_library="$nmrdbsearchdir/$dbfolder/peaks_${nuc1}_${solvent}"
+        [ ! -f "$peak_library" ] && { echo "$peak_library does not exist, exiting."; cleanup; exit 1; }
+        "$grepcommand" -n -- "${minshift1}:${maxshift1}" "$peak_library" > "$hits_temp"
+
+        # Format and count matches
+        line_count=$(awk -v fmt="$decprec1" -v p="$current_peak1" \
+            -v out_file="$search_output_full.for" '
+            BEGIN { FS=","; OFS=" " }
+            {
+                gsub(/\r/, "")
+                shift = (fmt ~ /%/) ? sprintf(fmt, $1) : $1;
+                print shift ", " $2 ", " p > out_file
+                count++
+            }
+            END { print count + 0 }
+        ' "$hits_temp")
+    fi
+    
+    # If exactly one match, tag as unique
+    if [ "$line_count" -eq 1 ]; then
+        uniques+=$(cat "$search_output_full.for")
+        uniques+=$'\n'
+    fi
+
+    # Append results for this peak/pair to the cumulative file
+    cat "$search_output_full.for" >> "$search_output_full"
+    ((counter++))
+    draw_progress "$counter" "$num_data_peaks"
+
+done < <(echo "$formatted_peaks")
+
+####################################################
+# ---------- POST-PROCESSING SEARCH OUTPUT --------#
+####################################################
+
+# For 1D: extract relevant columns, deduplicate, and store in output files
+if [ "$Dimension" == '1D' ]; then
+    cut -d',' -f2-3 "$search_output_full" > "$search_output"
+    cut -d',' -f1-2 "$search_output_full" > "$search_output_dbpeaks"
+    sort -u "$search_output" | awk 'NF' > "$search_output.tmp"
+    mv "$search_output.tmp" "$search_output"
+fi
+
+# For 2D: process both dimensions, deduplicate, and format
+if [ "$Dimension" == '2D' ]; then
+    cut -d',' -f3-5 "$search_output_full" > "$search_output"
+    cut -d',' -f3-4 "$search_output_full" > "$search_output_single"
+    cut -d',' -f1-3 "$search_output_full" > "$search_output_dbpeaks"
+    LC_ALL=C sed 's/,/ /2' "$search_output_dbpeaks" > "$search_output_dbpeaks.tmp"
+    mv "$search_output_dbpeaks.tmp" "$search_output_dbpeaks"
+    sort -u "$search_output" | awk 'NF' > "$search_output.tmp"
+    mv "$search_output.tmp" "$search_output"
+    sort -u "$search_output_single" | awk 'NF' > "$search_output_single.tmp"
+    mv "$search_output_single.tmp" "$search_output_single"
+fi
+
+# Exit if no matches found
+if [ ! -s "$search_output" ]; then
+    echo "no matches found"
+    cleanup; exit 1
+fi
+
+####################################################
+# ----------- GENERATE ACCESSION LIST -------------#
+####################################################
+
+# Find unique accessions and count hits
+if [ "$Dimension" == '1D' ]; then
+    sort -Vu "$search_output_dbpeaks" | awk -F' ' '{print $2}' | sort -V | uniq -c | awk '{$1=$1}1' > "$accessionsfile.tmp"
+fi
+if [ "$Dimension" == '2D' ]; then
+    sed 's/,[0-9.]*//' "$search_output_dbpeaks" | sort -Vu | awk -F' ' '{print $2}' | sort -V | uniq -c | awk '{$1=$1}1' > "$accessionsfile.tmp"
+fi
+mv "$accessionsfile.tmp" "$accessionsfile"
+
+# For pure samples, limit to top $maxaccessions accessions for speed
+if [ "$mixturemode" == "n" ]; then
+
+    [[ "$dbstring" == 'ALL' ]] && IMPURlines=$(grep 'IMPUR' "$accessionsfile")    #preserve IMPUR lines if dbstring is 'ALL'
+    
+    sort -n "$accessionsfile" | tail -n "$maxaccessions" > "$accessionsfile.tmp" #remove all but the top $maxaccessions" sorted by hits
+    
+    [[ "$dbstring" == 'ALL' ]] && echo "$IMPURlines" >> "$accessionsfile.tmp" #add in the IMPUR lines if dbstring is 'ALL'
+
+    mv "$accessionsfile.tmp" "$accessionsfile"
+else
+    if [ ! "$dbstring" == "IMPUR" ]; then
+        echo -e "\nmixturemode set to y, this may take a while!"
+    fi
+fi
+
+numaccessions=$(wc -l < "$accessionsfile")
+[[ "$verbose" == 'y' ]] && echo -e "\nMaking search summary files"
+[[ "$verbose" == 'y' ]] && echo "there are $numaccessions accessions to go through"
+
+####################################################
+# ----------- GENERATE SUMMARY FILES --------------#
+####################################################
+
+counter=0
+num_uniques=0
+
+# For each accession, pull info from database summary and calculate hitrate
+IFS=$'\n' read -d '' -r -a output_lines < "$accessionsfile"
+for ((i=0; i<${#output_lines[@]}; i++)); do
+    currentline="${output_lines[i]}"
+    read -r num_hits accession _ <<< "$currentline"
+    accession="${accession//,/}"
+    num_peaks=0
+    compoundname=''
+    dbsummaryfile="$nmrdbsearchdir/$dbfolder/database_summary_$solvent"
+    [ ! -f "$dbsummaryfile" ] && { echo "$dbsummaryfile does not exist, exiting."; cleanup; exit 1; }
+    dbsummary_line=$(LC_ALL=C look "$accession" "$dbsummaryfile" | grep -F "$accession"$' ')
+    if [ -n "$dbsummary_line" ]; then
+        IFS=$' \t\n' read -ra fields <<< "$dbsummary_line"
+        if [ "$dbstring" == "NMRexp" ]; then
+                compoundname=$(echo "$dbsummary_line" | cut -d " " -f 10-)
+                SMILES="${fields[8]}"
+                echo "$accession $SMILES" >> "$SMILESfile"
+        else
+                compoundname=$(echo "$dbsummary_line" | cut -d " " -f 6-)
+                SMILES="${fields[4]}"
+                echo "$accession $SMILES" >> "$SMILESfile"
+        fi
+        
+        case "$nuc1" in
+            1H)   num_peaks="${fields[1]}" ;;
+            13C)  num_peaks="${fields[2]}" ;;
+            31P)  num_peaks="${fields[3]}" ;;
+            19F)  num_peaks="${fields[4]}" ;;
+            11B)  num_peaks="${fields[5]}" ;;
+            29Si) num_peaks="${fields[6]}" ;;
+            *) echo "Error: $nuc1 is unsupported"; cleanup; exit 1 ;;
+        esac
+                
+        compoundname="${compoundname//$'\n'/}"
+        compoundname="${compoundname//$'\r'/}"
+    fi
+    
+    if [ -z "$num_peaks" ] || [ "$num_peaks" -eq 0 ] 2>/dev/null; then    # No valid peak count; avoid division by zero
+        hitrate="0.00"
+    else
+        hitrate=$(echo "scale=2 ;  $num_hits / $num_peaks" | bc | xargs printf "%.2f")
+    fi
+    
+    printf "%-16s%-14s%s (%s)\n" "$hitrate ($num_hits/$num_peaks)" "$num_uniques" "$accession" "$compoundname" >> "$full_search_summary"
+    printf "%-20s%-15s%s (%s)\n" "$num_hits ($num_hits/$num_peaks)" "$num_uniques" "$accession" "$compoundname" >> "$hitssorted_summary"
+
+    [[ "$verbose" == 'y' ]] && draw_progress "$i" "$numaccessions"
+done
+
+[[ "$verbose" == 'y' ]] && draw_progress "$i" "$numaccessions"  # Final progress bar update
+
+####################################################
+# ---- UNIQUE ACCESSION POST-PROCESSING -----------#
+####################################################
+
+# Find unique matches (accessions identified as only matches for a peak or pair of peaks)
+
+if [ "$Dimension" == '1D' ]; then
+    output_to_unique_search=$(echo "$uniques" | cut -d',' -f1-2 | sort -u)
+    unique_accessions=$(echo "$output_to_unique_search" | awk -F',' '{print $2}' | tr -d ' \t' ) 
+elif [ "$Dimension" == '2D' ]; then
+    output_to_unique_search=$(echo "$uniques" | cut -d',' -f1-3 | LC_ALL=C sed 's/,/ /2' | sort -u)
+    unique_accessions=$(echo "$output_to_unique_search" | awk -F' ' '{print $2}' | tr -d ' \t' ) 
+fi
+# Extract unique accession IDs
+filtered_unique_accessions=$(awk 'FNR==NR { list[$2]; next } NF && ($1 in list)' "$accessionsfile" <(echo "$unique_accessions"))
+
+#adjust lines in full_search_summary and hitssorted_summary a little for accessions with unique hits
+if [ -n "$filtered_unique_accessions" ]; then
+while IFS=$'\n' read -r accession; do
+    accession=$(echo "$accession" | awk 'NF')
+    num_uniques=$(echo "$output_to_unique_search" | grep -w "$accession" | wc -l)
+    full_search_summary_line=$(grep -w "$accession" "$full_search_summary" | head -n1)
+    if [ -n "$full_search_summary_line" ]; then
+        new_full_search_summary_line=$(
+            echo "$full_search_summary_line" | \
+            awk -v nu="$num_uniques" '{
+                pre  = substr($0, 1, 16);          # first 16 chars (ratio column)
+                mid  = sprintf("%-14s", nu);       # unique hits, padded to width 14
+                post = substr($0, 31);             # rest of line from col 31 onwards
+                print pre mid post;
+            }'
+        )
+        sed -i "/$(printf '%s' "$full_search_summary_line" | sed 's/[\/&]/\\&/g')/c\\$new_full_search_summary_line" \
+            "$full_search_summary"
+    fi
+    hitssorted_summary_line=$(grep -w "$accession" "$hitssorted_summary" | head -n1)
+    if [ -n "$hitssorted_summary_line" ]; then
+        new_hitssorted_summary_line=$(
+            echo "$hitssorted_summary_line" | \
+            awk -v nu="$num_uniques" '{
+                pre  = substr($0, 1, 20);          # first 20 chars (hits+ratio column)
+                mid  = sprintf("%-15s", nu);       # unique hits, padded to width 15
+                post = substr($0, 36);             # rest of line from col 36 onwards
+                print pre mid post;
+            }'
+        )
+        sed -i "/$(printf '%s' "$hitssorted_summary_line" | sed 's/[\/&]/\\&/g')/c\\$new_hitssorted_summary_line" \
+            "$hitssorted_summary"
+    fi
+
+done < <(echo "$filtered_unique_accessions")
+fi
+
+####################################################
+# ---- SORT AND ADD HEADERS TO SUMMARY FILES ------#
+####################################################
+
+sort -n -r -o "$full_search_summary" "$full_search_summary"
+sort -n -r -o "$hitssorted_summary" "$hitssorted_summary"
+
+sed -i '1iMatching_ratio  Unique hits   Accession (molecule name)'  "$full_search_summary"
+sed -i '1iHits (match ratio)  Unique hits    Accession (molecule name)' "$hitssorted_summary"
+
+> "$shiftordered_results"
+echo -e "\nMaking best hits summary file"
+
+# If dbstring='ALL': Find any IMPUR lines and retain them for later (less important here since we're sorting by matching ratio)
+[[ "$dbstring" == 'ALL' ]] && IMPURlines=$(grep 'IMPUR' "$full_search_summary")
+
+# Allow for extra results to ensure we don't miss top matches after recalculating one-to-one matching ratios
+cutoff=$((maxresults + 40))
+top_hits_data=$(head -n "$cutoff" "$full_search_summary" | tail -n +2)
+
+# If dbstring='ALL': add IMPURlines back into summary
+[[ "$dbstring" == 'ALL' ]] && top_hits_data="$top_hits_data"$'\n'"$IMPURlines" 
+
+top_hits_data=$(printf '%s\n' "$top_hits_data" | sort -u)
+best_accessions=$(echo "$top_hits_data" | awk 'NF && $4 != "" {print $4}')
+counter=0
+countermax=$(echo "$best_accessions" | wc -l)
+
+####################################################
+# ---- CALCULATE TRUE ONE-TO-ONE MATCH RATIOS -----#
+####################################################
+
+while IFS=$'\n' read -r accession; do
+    from_full_summary=$(grep -w "$accession" <<< "$top_hits_data" | sed 's|[^/]*||')
+    num_peaks=$(echo "$from_full_summary" | grep -oP '(?<=/)[0-9.]+(?=\))') #total number of peaks for $accession in database
+    from_full_summary_trimmed=$(echo "$from_full_summary" | sed 's|^[^)]*)[[:space:]]*||')
+    matched_f1_peaks=$(grep -w "$accession" "$search_output" | cut -f2 -d',' | sort -u) #list of input peaks that $accession matches
+    accession_peaks=$(grep -w "$accession" "$search_output_dbpeaks" | cut -f1 -d',' | sort -u) #list of peaks for $accession that match input 
+    formatted_accession_peaks=$(awk -v fmt="$decprec1" '{split($1, a, ","); printf fmt "\n", a[1]}' <<< "$accession_peaks") #formatting
+    real_hits=$(hopcroft_karp_match "$formatted_accession_peaks" "$matched_f1_peaks" "$tolerance") #calculate one-to-one hitrates with Hopcroft-Karp
+    if [ -z "$num_peaks" ] || [ "$num_peaks" -eq 0 ] 2>/dev/null; then    # No valid peak count; avoid division by zero
+        hitrate="0.00"
+    else
+        hitrate=$(echo "scale=2 ;  $real_hits / $num_peaks" | bc | xargs printf "%.2f") 
+    fi
+    printf "%-16s%s\n" \
+           "$hitrate ($real_hits/$num_peaks)" \
+           "$from_full_summary_trimmed" >> "$best_hits_summary"  
+    ((counter++))
+    draw_progress "$counter" "$countermax"
+done < <(echo "$best_accessions")
+
+# Final post-processing of best_hits_summary
+sort -n -r -o "$best_hits_summary" "$best_hits_summary" #re-sort as new hitrate can be different
+
+if [ "$dbstring" == 'ALL' ]; then       #ignore IMPUR lines when stripping down to top maxresults lines
+    awk -v max="$maxresults" '
+        NR == 1 { print; next }                # keep header
+        /IMPUR/ && nonimpur < max { print; next } # keep all IMPUR above the last non-IMPUR
+        nonimpur < max { print; nonimpur++ }   # keep first max non-IMPUR
+    ' "$best_hits_summary" > "$best_hits_summary.chopped"
+else
+    head -n "$maxresults" "$best_hits_summary" > "$best_hits_summary.chopped"
+fi
+
+mv "$best_hits_summary.chopped" "$best_hits_summary"
+sed -i "1i HK match ratio  Unique hits   Accession (molecule name)" "$best_hits_summary" #add header 
+
+
+####################################################
+# ----------- SHIFT-ORDERED RESULTS ---------------#
+####################################################
+
+#This file is useful for users interested in matches for a specific few input peaks--useful for mixtures
+echo -e "\nMaking shift-ordered results"
+counter=0
+echo -e "Peak      Matching Ratio  Unique hits   Accession (molecule name)" >> "$shiftordered_results" #add header 
+while IFS=$'\n' read -r line_data; do
+    current_peak1=$(echo "${line_data}" | sed 's/,.*//' | bc -l | xargs printf "$decprec1") #pulling shift (1D) or shifts (2D) from $currentpeaks
+    shiftordered_list=''
+
+    IFS=', ' read -r num1 num2 <<< "$line_data"
+    if [ "$Dimension" == '2D' ]; then
+        formatted_peaks=$(printf "$decprec1, $decprec2" "$num1" "$num2")
+        echo "${formatted_peaks}" >> "$shiftordered_results"
+        current_peak2=$(echo "${line_data}" | sed 's/.*,//' | sed 's/=[ \t]*/=/' | bc -l | xargs printf "$decprec2")
+        current_accessions=$(grep -F ", $current_peak2" "$search_output" | grep -F ", $current_peak1" | sed 's/, .*//' | sort -u) #accessions for current peak
+    else
+        echo "${current_peak1}" >> "$shiftordered_results"
+        current_accessions=$(grep -F ", $current_peak1" "$search_output" | sed 's/, .*//' | sed 's/ //' | sort -u) #accessions for current peak
+    fi
+
+if [ -n "$current_accessions" ]; then
+	current_accessions_short=$(echo "$current_accessions" | awk 'NR==FNR{val[$1]; next} $4 in val {print $4}' - "$full_search_summary") #accessions in both
+    for_current_accessions=$(grep -wFf <(echo "$current_accessions_short") "$full_search_summary") #get full line for appropriate accessions
+
+    if [ "$dbstring" == "ALL" ]; then #holding onto IMPUR hits if using ALL db
+        IMPUR_for_current=$(echo "$for_current_accessions" | grep 'IMPUR' || true)
+        nonIMPUR_for_current=$(echo "$for_current_accessions" | grep -v 'IMPUR' || true)
+        nonIMPUR_for_current=$(echo "$nonIMPUR_for_current" | head -n "$maxresults")
+        for_current_accessions=$(printf '%s\n%s\n' "$IMPUR_for_current" "$nonIMPUR_for_current" | awk 'NF')
+    else
+        for_current_accessions=$(echo "$for_current_accessions" | head -n "$maxresults")
+    fi
+
+    if [ -n "$for_current_accessions" ]; then
+        while IFS=$'\n' read -r full_search_summary_line; do
+            [ -z "$full_search_summary_line" ] && continue
+            shiftordered_list+="          $full_search_summary_line"$'\n'
+        done < <(echo "$for_current_accessions")
+    fi
+
+    shiftordered_list=$(echo "$shiftordered_list" | sort -n -r)
+    echo "$shiftordered_list" >> "$shiftordered_results"
+fi
+    ((counter++))
+    draw_progress "$counter" "$num_data_peaks"
+done < <(echo "$currentpeaks")
+
+####################################################
+# ------ PER-ACCESSION OUTPUT FILES ---------------#
+####################################################
+
+#make a file for each of the best_accessions
+
+[[ "$verbose" == 'y' ]] && echo -e "\nMaking accession specific results files"
+best_accessions=$(tail -n +2 "$best_hits_summary" | awk '{print $4}') #list of best accessions from best_hits_summary
+
+while IFS=$'\n' read -r accession; do
+
+    [[ "$verbose" == 'y' ]] && echo "making results file for $accession"
+    accession_results="$datadirectory/nmrdbsearch/$accession"
+    > "$accession_results"
+    
+    expshifts=''
+    while IFS=$'\n' read -r line_data; do
+        IFS=', ' read -r num1 num2 <<< "$line_data"
+        if [ "$Dimension" == '1D' ]; then
+            prev_peaks=$(printf "$decprec1" "$num1")
+        else
+            prev_peaks=$(printf "$decprec1, $decprec2" "$num1" "$num2")
+        fi
+
+        if awk -v s="$prev_peaks" -v t="$accession" '/^-?[0-9.]+[[:space:],]*[0-9.]*$/{cs=$0} cs==s && $0~t{f=1;exit} END{exit !f}' "$shiftordered_results"; then
+            expshifts+="$prev_peaks ***MATCH***"$'\n' #indicates this input peak has a match in $accession
+        else
+            expshifts+="$prev_peaks"$'\n'
+        fi
+    done < <(echo "$currentpeaks")
+
+    mapfile -t expshifts_arr <<< "$expshifts"
+
+    # Get all solvent-specific shifts for this accession
+    if [ "$Dimension" == '2D' ]; then
+        maxj=2
+        nuclist=("$nuc1" "$nuc2")
+        decpreclist=("$decprec1" "$decprec2")
+    else
+        maxj=1
+        nuclist=("$nuc1")
+        decpreclist=("$decprec1")
+    fi
+
+    for ((j=0; j<maxj; j++)); do
+        nuc=${nuclist[j]}
+        decprec=${decpreclist[j]}
+        peaks='' 
+        peak_library="$nmrdbsearchdir/$dbfolder/accessions_$nuc"'_'"${solvent}" #using the smaller accessions_ files to get full list of peaks for this accession
+        accession_peaks=$(look "$accession" "$peak_library" | grep -F "$accession," | sed 's/'"$accession,"'//') 
+        shifts=$(echo "$accession_peaks" | tr ',' '\n' | sed '/^[[:space:]]*$/d' | awk 'BEGIN{FS=OFS=","} {printf "'"$decprec"'\n", $1}' | sort -uh)
+        if [ "$nuc" == '1H' ]; then
+            mapfile -t accshifts_1H <<< "$nuc"$'\n'"$shifts"
+        else
+            mapfile -t accshifts_X <<< "$nuc"$'\n'"$shifts"
+        fi
+    done
+
+    max=${#expshifts_arr[@]}
+    if [ "$Dimension" == '2D' ]; then
+        [[ ${#accshifts_1H[@]} -gt $max ]] && max=${#accshifts_1H[@]}
+        [[ ${#accshifts_X[@]} -gt $max ]] && max=${#accshifts_X[@]}
+    else
+        if [ "$nuc" == '1H' ]; then
+            [[ ${#accshifts_1H[@]} -gt $max ]] && max=${#accshifts_1H[@]}
+        else
+            [[ ${#accshifts_X[@]} -gt $max ]] && max=${#accshifts_X[@]}
+        fi
+    fi
+
+     # Get the best summary line for this accession (normalize tabs → spaces)
+    best_search_summary_line=$(grep -w "$accession" "$best_hits_summary" | head -n1)
+    best_search_summary_line=${best_search_summary_line//$'\t'/ }
+
+    # If it ends with an empty " ()", strip it and adjust the header label since there's no molecule name in the DB for this one
+    if [[ "$best_search_summary_line" == *" ()" ]]; then
+        best_search_summary_line="${best_search_summary_line% ()}"
+        header_label="Accession"
+    else
+        header_label="Accession (molecule name)"
+    fi
+
+    # Use awk to parse: ratio, hits, rest (accession [+ name])
+    parsed=$(printf '%s\n' "$best_search_summary_line" | awk '{
+        ratio = $1;
+        idx = 2;
+        if ($2 ~ /^\(.*\)$/) { ratio = ratio " " $2; idx = 3; }
+        hits = $idx; idx++;
+        rest = $idx;
+        for (i = idx+1; i <= NF; i++) rest = rest " " $i;
+        print ratio "|" hits "|" rest;
+    }')
+
+    IFS='|' read -r ratio hits rest <<<"$parsed"
+
+    {
+        printf "%-22s %-12s %s\n" "HK match ratio" "Unique hits" "$header_label"
+        printf "%-22s %-12s %s\n" "$ratio" "$hits" "$rest"
+        printf "\n"
+        printf "%-35s%s shifts\n" "Queried Peaks" " $accession"
+    } >> "$accession_results"
+
+    set +u
+    for ((i=0; i<max; i++)); do
+        if [ "$Dimension" == '2D' ]; then
+            printf "%-35s %-15s %-15s\n" "${expshifts_arr[i]}" "${accshifts_1H[i]}" "${accshifts_X[i]}" >> "$accession_results"
+        else
+            if [ "$nuc" == '1H' ]; then
+                printf "%-35s %-15s %-15s\n" "${expshifts_arr[i]}" "${accshifts_1H[i]}" >> "$accession_results"
+            else
+                printf "%-35s %-15s %-15s\n" "${expshifts_arr[i]}" "${accshifts_X[i]}" >> "$accession_results"
+            fi
+        fi
+    done
+    set -u
+
+done < <(echo "$best_accessions")
+
+
+####################################################
+# --------- MOLECULE IMAGE GENERATION -------------#
+####################################################
+
+if [ "$draw_molecules" == "y" ]; then
+    [[ "$verbose" == 'y' ]] && echo "making .svg image of top $maxresults hits"
+    awk 'FNR==NR { data[$1] = $2; next } ($1 in data) { print data[$1] " " $1}' "$SMILESfile" <(echo "$best_accessions") > "$SMILESfile.filtered"
+    mv "$SMILESfile.filtered" "$SMILESfile"
+    awk 'FNR==NR { score[$4] = $1; next } ($2 in score) { print $0 " (" score[$2] ")" }' "$best_hits_summary" "$SMILESfile" > "$SMILESfile.filtered"
+    mv "$SMILESfile.filtered" "$SMILESfile"
+    [[ "$dbstring" == 'ALL' && "$impur_in_img" == 'n' ]] && sed -i '/IMPUR/d' "$SMILESfile"
+    echo -e '\n'
+
+    # Generate SVG of top molecules using Open Babel
+    if ! obabel "$SMILESfile" -xt -O "$structuressvg"; then
+        echo "Could not generate image of top hits because Open Babel is not installed! Install Open Babel!"
+    fi
+fi
+
+cleanup
+echo "done"
