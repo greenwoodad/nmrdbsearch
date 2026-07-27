@@ -30,26 +30,25 @@ followed by:
 ```sh
 chmod +x ./nmrdbsearch/install.sh
 ./nmrdbsearch/install.sh
-
 ```
 
 The install script will ask where to install the program, copy nmrdbsearch to the specified location, and install dependencies (Open Babel and sgrep-1.0).
 
 If you get an error like make: command not found you will need to install development tools.
 
-    Ubuntu, Linux Mint, Debian, Pop!_OS:
-    ```sh
-     sudo apt update && sudo apt install build-essential
-    ```
+Ubuntu, Linux Mint, Debian, Pop!_OS:
+```sh
+sudo apt update && sudo apt install build-essential
+```
 
-    Fedora, CentOS, RHEL, Rocky Linux:
-    ```sh
-    sudo dnf groupinstall "Development Tools"
-    ```
-    Arch Linux, Manjaro:
-    ```sh
-    sudo pacman -Syu base-devel"
-    ```
+Fedora, CentOS, RHEL, Rocky Linux:
+```sh
+sudo dnf groupinstall "Development Tools"
+```
+Arch Linux, Manjaro:
+```sh
+sudo pacman -Syu base-devel"
+```
 Then re-run the install script.
 
 The install script will unpack the peak lists, expanding the total size to about 7 GB.
@@ -84,45 +83,45 @@ https://openbabel.org/docs/Installation/install.html
 
 Note: The databases this program searches contain approximately 89% data collected in CDCl3, 8% in DMSO, and 3% in other solvents. Data collected in one solvent will not generally return good matches from entries in different solvents, so the best results can be expected for data collected in CDCl3. Using 13C (or 19F/31P/11B/29Si) 1D data or 1H/13C 2D data tends to provide better results than 1H 1D data, given the relatively poor dispersion of 1H shifts. Although an exact match is unlikely, observing common structural motifs in the structures_<db>.svg image file may provide insight into the identity of your compound. Searching the default ALL database will usually work well unless doing mixture analysis (see below).
 
-###Options
+### Options
 
- `-h, -?, --help`                           Show help message.
+-h, -?, --helpn                          Show help message.
 
- `-i, --input`                              Set input peaklist file (.txt or .xml). Looks in 
-                                            datafolder/pdata/1/ if not given."
+-i, --input                              Set input peaklist file (.txt or .xml). Looks in 
+                                         datafolder/pdata/1/ if not given."
 
- `-d, --database (default ALL)`             Set database: NP, NMRBank, NMRexp, IMPUR, or ALL."
+-d, --database (default ALL)             Set database: NP, NMRBank, NMRexp, IMPUR, or ALL."
 
- `-s, --solvent (default set by pdata)`     Set to the most applicable solvent of the following:
-                                            acetic  acetone  C6D6  CD3CN  CD2Cl2  CDCl3  CD3OD     
-                                            D2O     DMF      DMSO  Pyr    THF     Tol    all
+-s, --solvent (default set by pdata)     Set to the most applicable solvent of the following:
+                                         acetic  acetone  C6D6  CD3CN  CD2Cl2  CDCl3  CD3OD     
+                                         D2O     DMF      DMSO  Pyr    THF     Tol    all
 
- `-dim, --dimension (default set by data)`  Set to '1D' for 1D data peaklist, '2D' for 2D data 
+-dim, --dimension (default set by data)  Set to '1D' for 1D data peaklist, '2D' for 2D data 
 
- `-n, --nucleus (default set by pdata)`     Set to '1H' '13C' '31P' '19F' '11B' or '29Si'"
+-n, --nucleus (default set by pdata)     Set to '1H' '13C' '31P' '19F' '11B' or '29Si'"
  
- `-n2, --nucleus2 (default set by pdata)`   Set to '13C' '31P' '19F' '11B' or '29Si'"
+-n2, --nucleus2 (default set by pdata)   Set to '13C' '31P' '19F' '11B' or '29Si'"
 
- `-t, --tolerance`                          Set to tolerance (+/- in ppm) for matching peaks
-                                            Default is 0.3 for 13C, 0.03 for 1H, 1.0 for others
+-t, --tolerance                          Set to tolerance (+/- in ppm) for matching peaks
+                                         Default is 0.3 for 13C, 0.03 for 1H, 1.0 for others
 
- `-t2, --tolerance2`                        Set to tolerance (+/- in ppm) for indirect dimension
-                                            Default is 0.3 for 13C, 1.0 for others. Not used for 1D data
+-t2, --tolerance2                        Set to tolerance (+/- in ppm) for indirect dimension
+                                         Default is 0.3 for 13C, 1.0 for others. Not used for 1D data
                                                        
- `-m, --mixmode (default n)`                Mixture mode. Specify if running on complex mixture (slow 
-                                            for large databases). If 'n' only the top 200 matches (ranked 
-                                            by number of hits) are reported.
+-m, --mixmode (default n)                Mixture mode. Specify if running on complex mixture (slow 
+                                         for large databases). If 'n' only the top 200 matches (ranked 
+                                         by number of hits) are reported.
 
- `-im, --impureinc (default n)`             If using the database ALL, specifying this will include all
-                                            IMPUR results in the structure image file (may increase clutter). 
+-im, --impureinc (default n)             If using the database ALL, specifying this will include all
+                                         IMPUR results in the structure image file (may increase clutter). 
                
- `-v, --verbose`                            Verbose mode. More command line output as program runs.
+-v, --verbose                            Verbose mode. More command line output as program runs.
   
 The defaults can be modified at the top of the script itself.
 
-###Data Collection and Processing
+### Data Collection and Processing
 
-####Picking Peaks
+#### Picking Peaks
 
 Spectra should first be referenced to TMS. For 13C spectra collected in D2O, it may be advisable to try inputting data both directly referenced to TSP or DSS and indirectly to TMS (based on the 2H lock), as the shifts in these databases are not fully consistent one way or the other.
 
@@ -132,7 +131,7 @@ With 2D data, peaks should ideally be picked with both the 13C and 1H spectra in
 
 Peak lists will be saved in pdata/1 by default in Topspin. With MNova, click “Copy Table” in the peaks table and then paste the contents (including the header) into a text file named peak.txt (no “s”) in pdata/1. If generated manually, make sure peaks are all specified to at least one decimal place and that the filename ends in .txt. Manually-generated input files should be specified with the -i option along with -dim for dimension (1D or 2D) and -n for nucleus (and -n2 for the indirect nucleus if dim is 2D).
 
-###Running the Program
+### Running the Program
 
 ```sh
 nmrdbsearch [OPTIONS]... path/to/data (uses current directory as default)
@@ -146,7 +145,7 @@ By default, the program runs on all databases (ALL), which can take about a minu
 
 When running with the ALL database, hits from the IMPUR database will be retained even if they are considered weak (only a few peak hits), because the compounds in this database are more likely to be present as impurities. By default they are excluded from the structures_ALL.svg image file, but can be included by specifying the -im flag.
 
-##Notes about 2D Data
+## Notes about 2D Data
 
 Currently, database entries are identified as matches for 2D data if they contain 1H and X shifts that are both within their respective tolerances for a peak in the input table. This means that the search identifies possible HMBC peaks as well as HSQC peaks. On the other hand, it produces more false positives than if only entries’ HSQC peaks were considered. 
 
@@ -160,7 +159,7 @@ The full_summary_<db>, hitssorted_full_summary_<db>, and shiftordered_results_<d
 
 Finally, structures_<db>.svg shows a grid of the structures of the best accessions, with the accession name and Hopcroft–Karp match ratio displayed under each. Common structural motifs can often be observed by studying the matches.
 
-##Note about Database Processing:
+## Note about Database Processing:
 
 The provided peak lists have been adapted from their source databases. In the case of NP-MRD, only experimental shifts have been included. In all cases (except for the impurity tables), some shifts have been excluded because they were identified as likely typos or otherwise inappropriate. These include values that appear to be from a different nucleus, mis-read IR stretches, J-couplings, or other non-chemical-shift text. Nonetheless, some typos have undoubtedly gone undetected. No attempt has been made to insert corrected versions of typos into the lists; they have simply been omitted. Properly-reported very large values were checked manually, so genuinely anomalously large shifts (for example from paramagnetic effects) have been preserved. Peak ranges (reported as shift1–shift2) are represented here as the average of the two reported values.
 
@@ -170,8 +169,8 @@ Pull requests are welcome.
 
 ## Authors
 
-    Alex Greenwood – author and maintainer –
-    https://github.com/Greenwoodad
+Alex Greenwood – author and maintainer –
+https://github.com/greenwoodad
 
 ## License
 
