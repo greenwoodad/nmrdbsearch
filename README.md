@@ -85,7 +85,7 @@ Note: The databases this program searches contain approximately 89% data collect
 
 ### Options
 
--h, -?, --helpn                          Show help message.
+'-h, -?, --helpn                          Show help message.
 
 -i, --input                              Set input peaklist file (.txt or .xml). Looks in 
                                          datafolder/pdata/1/ if not given."
@@ -115,7 +115,7 @@ Note: The databases this program searches contain approximately 89% data collect
 -im, --impureinc (default n)             If using the database ALL, specifying this will include all
                                          IMPUR results in the structure image file (may increase clutter). 
                
--v, --verbose                            Verbose mode. More command line output as program runs.
+-v, --verbose                            Verbose mode. More command line output as program runs.'
   
 The defaults can be modified at the top of the script itself.
 
