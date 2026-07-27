@@ -3,14 +3,14 @@
 This program takes in an NMR peak list, either generated manually or by Topspin or MNova, and searches tables of shifts
 derived from various NMR databases, currently NP-MRD (https://np-mrd.org/), NMRBank (https://doi.org/10.1039/D4SC08802F),
 NMRexp (https://doi.org/10.1038/s41597-025-06245-5), and the trace impurity tables from Fulmer et al.
-(DOI: 10.1021/om100106e). It supports 1D (1H, 13C, 31P, 19F, 11B, 29Si) and 2D (1H/X) data. It returns multiple 
+(DOI: [10.1021/om100106e](https://doi.org/10.1021/om100106e)). It supports 1D (1H, 13C, 31P, 19F, 11B, 29Si) and 2D (1H/X) data. It returns multiple 
 output files describing possible compounds for each peak, as well as chemical structures of the top hits. 
 
 ## Prerequisites
 
 This script requires about 7 GB disk space, a Linux environment, and sgrep (https://sgrep.sourceforge.net/). 
-Currently it only supports Topspin/MNova peak lists and Bruker `acqu` files, but data collected on non-Bruker 
-instruments can be analyzed by specifying solvent and nuclei with command-line options instead of using an `acqu` 
+Currently it only supports Topspin/MNova peak lists and Bruker acqu files, but data collected on non-Bruker 
+instruments can be analyzed by specifying solvent and nuclei with command-line options instead of using an acqu 
 file in the data directory.
 
 It uses Open Babel (https://openbabel.org/index.html) to draw molecule images of the top matches.
