@@ -85,37 +85,37 @@ Note: The databases this program searches contain approximately 89% data collect
 
 ### Options
 
- `-h, -?, --help`                           Show help message.
+-h, -?, --help                           Show help message.
 
- `-i, --input`                              Set input peaklist file (.txt or .xml). Looks in 
-                                            datafolder/pdata/1/ if not given."
+-i, --input                              Set input peaklist file (.txt or .xml). Looks in 
+                                         datafolder/pdata/1/ if not given."
 
- `-d, --database (default ALL)`             Set database: NP, NMRBank, NMRexp, IMPUR, or ALL."
+-d, --database (default ALL)             Set database: NP, NMRBank, NMRexp, IMPUR, or ALL."
 
- `-s, --solvent (default set by pdata)`     Set to the most applicable solvent of the following:  
-                                            acetic  acetone  C6D6  CD3CN  CD2Cl2  CDCl3  CD3OD  
-                                            D2O     DMF      DMSO  Pyr    THF     Tol    all  
+-s, --solvent (default set by pdata)     Set to the most applicable solvent of the following:  
+                                         acetic  acetone  C6D6  CD3CN  CD2Cl2  CDCl3  CD3OD  
+                                         D2O     DMF      DMSO  Pyr    THF     Tol    all  
 
- `-dim, --dimension (default set by data)`  Set to '1D' for 1D data peaklist, '2D' for 2D data 
+-dim, --dimension (default set by data)  Set to '1D' for 1D data peaklist, '2D' for 2D data 
 
- `-n, --nucleus (default set by pdata)`     Set to '1H' '13C' '31P' '19F' '11B' or '29Si'"
+-n, --nucleus (default set by pdata)     Set to '1H' '13C' '31P' '19F' '11B' or '29Si'"
  
- `-n2, --nucleus2 (default set by pdata)`   Set to '13C' '31P' '19F' '11B' or '29Si'"
+-n2, --nucleus2 (default set by pdata)   Set to '13C' '31P' '19F' '11B' or '29Si'"
 
- `-t, --tolerance`                          Set to tolerance (+/- in ppm) for matching peaks  
+-t, --tolerance                          Set to tolerance (+/- in ppm) for matching peaks  
                                             Default is 0.3 for 13C, 0.03 for 1H, 1.0 for others  
 
- `-t2, --tolerance2`                        Set to tolerance (+/- in ppm) for indirect dimension  
+-t2, --tolerance2                        Set to tolerance (+/- in ppm) for indirect dimension  
                                             Default is 0.3 for 13C, 1.0 for others. Not used for 1D data  
                                                        
- `-m, --mixmode (default n)`                Mixture mode. Specify if running on complex mixture (slow   
+-m, --mixmode (default n)                Mixture mode. Specify if running on complex mixture (slow   
                                             for large databases). If 'n' only the top 200 matches (ranked  
                                             by number of hits) are reported.
 
- `-im, --impureinc (default n)`             If using the database ALL, specifying this will include all  
+-im, --impureinc (default n)             If using the database ALL, specifying this will include all  
                                             IMPUR results in the structure image file (may increase clutter).  
                
- `-v, --verbose`                            Verbose mode. More command line output as program runs.
+-v, --verbose                            Verbose mode. More command line output as program runs.
   
 The defaults can be modified at the top of the script itself.
 
