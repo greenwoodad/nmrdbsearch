@@ -47,20 +47,23 @@ sudo dnf groupinstall "Development Tools"
 ```
 Arch Linux, Manjaro:
 ```sh
-sudo pacman -Syu base-devel"
+sudo pacman -Syu base-devel
 ```
 Then re-run the install script.
 
-The install script will unpack the peak lists, expanding the total size to about 7 GB.
-**This is a lengthy process and may take up to 5 minutes.**
+The script will ask if you want to alias nmrdbsearch in your .bashrc file. If you indicate yes, you can run the program by typing
+nmrdbsearch in the command line, otherwise you must type "/path/to/nmrdbsearch/nmrdbsearch"
 
-To run nmrdbsearch from any directory, add this to ~/.bashrc:
+If you change your mind about this later, just add this to ~/.bashrc:
 
 ```sh
 alias nmrdbsearch="/path/to/nmrdbsearch/nmrdbsearch"
 ```
 
 where /path/to/ should be replaced with the location of the nmrdbsearch directory.
+
+The install script will unpack the peak lists, expanding the total size to about 7 GB.
+**This is a lengthy process and may take up to 5 minutes.**
 
 ## Getting Started
 
