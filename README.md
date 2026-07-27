@@ -92,15 +92,15 @@ Note: The databases this program searches contain approximately 89% data collect
 |--------|-------------|
 | `-h`, `-?`, `--help` | Show help message. |
 | `-i`, `--input` | Set input peak list file (.txt or .xml).<br>Looks in datafolder/pdata/1/ if not given. |
-| `-d`, `--database` (default ALL) | Database to search: `NP`, `NMRBank`, `NMRexp`, `IMPUR`, or `ALL`. |
+| `-d`, `--database` (default `ALL`) | Database to search: `NP`, `NMRBank`, `NMRexp`, `IMPUR`, or `ALL`. |
 | `-s`, `--solvent` (default from acqu/pdata) | Set to the most applicable solvent:<br>`acetic`, `acetone`, `C6D6`, `CD3CN`, `CD2Cl2`, `CDCl3`, `CD3OD`,<br>`D2O`, `DMF`, `DMSO`, `Pyr`, `THF`, `Tol`, `all`. |
 | `-dim`, `--dimension` (default inferred from data) | Set to '1D' for 1D data, '2D' for 2D data. |
 | `-n`, `--nucleus` (default from acqu/pdata) | Set to `1H`, `13C`, `31P`, `19F`, `11B`, or `29Si`. |
 | `-n2`, `--nucleus2` (default from acqu/pdata) | For 2D data: set to `13C`, `31P`, `19F`, `11B`, or `29Si`. |
 | `-t`, `--tolerance` | Set tolerance (± ppm) for matching peaks.<br>Defaults: 0.03 for 1H, 0.3 for 13C, 1.0 for others. |
 | `-t2`, `--tolerance2` | Set tolerance (± ppm) for the indirect dimension (2D only).<br>Defaults: 0.3 for 13C, 1.0 for others. |
-| `-m`, `--mixmode` (default `n`) | Mixture mode. Use `y` for complex mixtures (slower for large databases).<br>If `n`, only the top 200 matches (by number of hits) are considered. |
-| `-im`, `--impureinc` (default `n`) | When using database `ALL`, include all IMPUR results in the structure image file (may increase clutter). |
+| `-m`, `--mixmode` | Mixture mode. Specify for complex mixtures (slower for large databases).<br>If not specified, only the top 200 matches (by number of hits) are considered. |
+| `-im`, `--impureinc` | When using database `ALL`, specify to include all IMPUR results in the structure image file (may increase clutter). |
 | `-v`, `--verbose` | Verbose mode. More command-line output as the program runs. |
   
 The defaults can be modified at the top of the script itself.
