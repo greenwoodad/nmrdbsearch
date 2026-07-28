@@ -6,24 +6,34 @@ set -e
 echo ""
 echo "=== Installation Setup ==="
 
-# Get the directory of the current running script
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_DIR="$PWD"
 
-# Define the new dynamic default target path
-DEFAULT_DIR="$HOME/nmrdbsearch"
+echo "Source directory: $SOURCE_DIR"
+echo
 
-# Ask the user for the target directory, defaulting to the Present Working Directory (PWD)
-read -p "Enter installation target directory [Default: $DEFAULT_DIR]: " TARGET_DIR
-TARGET_DIR="${TARGET_DIR:-$DEFAULT_DIR}"
-
-# Resolve the absolute path of the target directory
-TARGET_DIR="$(mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd)"
-
-# Prevent copying the folder into itself if the target is the source folder
-if [ "$SOURCE_DIR" = "$TARGET_DIR" ]; then
-    echo "Error: Target directory cannot be the same as the source directory."
-    exit 1
-fi
+# Ask whether to install in-place
+while true; do
+    read -r -p "Install in-place in $SOURCE_DIR? [Y/n]: " ans
+    case "$ans" in
+        [Yy]|"" )
+            TARGET_DIR="$SOURCE_DIR"
+            in_place="y"
+            break
+            ;;
+        [Nn] )
+            in_place="n"
+            read -r -p "Enter installation target directory (will be created if needed): " TARGET_DIR
+            # If user just hits Enter, fall back to PWD
+            TARGET_DIR="${TARGET_DIR:-$DEFAULT_DIR}"
+            TARGET_DIR="$(mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd)"
+            break
+            ;;
+        * )
+            echo "Please answer y or n."
+            ;;
+    esac
+done
 
 # Offer to add nmrdbsearch alias to ~/.bashrc
 echo
@@ -54,8 +64,22 @@ done
 echo "Installing to: $TARGET_DIR"
 
 echo "Copying contents..."
-# Copy all contents (including hidden files) to the target directory
-cp -r "$SOURCE_DIR"/. "$TARGET_DIR"/
+if [ "$in_place" = "y" ]; then
+    echo "Installing in-place; no copy needed."
+else
+    # Copy all contents (including hidden files) to the target directory
+    cp -r "$SOURCE_DIR"/. "$TARGET_DIR"/
+fi
+
+if [ "$in_place" = "n" ]; then
+    echo
+    echo "Note: You now have two copies of nmrdbsearch:"
+    echo "  Source (for git pull / updates): $SOURCE_DIR"
+    echo "  Installed (used at runtime):     $TARGET_DIR"
+    echo "Future 'git pull' should be run in the source directory."
+    echo "The alias (if added) points to:    $TARGET_DIR/nmrdbsearch"
+    echo
+fi
 
 echo "Compiling subdirectories..."
 # Find any subdirectory containing a Makefile and run 'make' inside it
