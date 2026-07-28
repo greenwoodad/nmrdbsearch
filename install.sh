@@ -93,6 +93,9 @@ nmrdbsearchfile="$TARGET_DIR/nmrdbsearch"
 # Use a safe delimiter (|) in sed in case the folder name contains slashes
 sed -i "s|folder_goes_here|$TARGET_DIR|g" "$nmrdbsearchfile"
 
+# Make nmrdbsearch executable
+chmod +x "$nmrdbsearchfile"
+
 echo "=== Dependency Check: Open Babel ==="
 # Install Open Babel if it is not already installed
 if ! command -v obabel &> /dev/null; then
