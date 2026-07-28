@@ -19,6 +19,12 @@ TARGET_DIR="${TARGET_DIR:-$DEFAULT_DIR}"
 # Resolve the absolute path of the target directory
 TARGET_DIR="$(mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd)"
 
+# Prevent copying the folder into itself if the target is the source folder
+if [ "$SOURCE_DIR" = "$TARGET_DIR" ]; then
+    echo "Error: Target directory cannot be the same as the source directory."
+    exit 1
+fi
+
 # Offer to add nmrdbsearch alias to ~/.bashrc
 echo
 echo "You can add an alias so 'nmrdbsearch' runs $TARGET_DIR/nmrdbsearch"
@@ -46,12 +52,6 @@ while true; do
     esac
 done
 echo "Installing to: $TARGET_DIR"
-
-# Prevent copying the folder into itself if the target is the source folder
-if [ "$SOURCE_DIR" = "$TARGET_DIR" ]; then
-    echo "Error: Target directory cannot be the same as the source directory."
-    exit 1
-fi
 
 echo "Copying contents..."
 # Copy all contents (including hidden files) to the target directory
