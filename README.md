@@ -61,6 +61,8 @@ alias nmrdbsearch="/path/to/nmrdbsearch/nmrdbsearch"
 
 where /path/to/ should be replaced with the location of the nmrdbsearch directory.
 
+Note that you will need to restart your shell or run: source "~/.bashrc" before the alias will work!
+
 The install script will unpack the peak lists, expanding the total size to about 7 GB.
 **This is a lengthy process and may take up to 5 minutes.**
 
