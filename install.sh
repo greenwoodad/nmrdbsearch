@@ -107,8 +107,10 @@ tar -xf "$TARGET_DIR/NMRexp.tar.gz" -C "$TARGET_DIR/NMRexp"
 tar -xf "$TARGET_DIR/NMRexp_dbsum.tar.gz" -C "$TARGET_DIR/NMRexp"
 tar -xf "$TARGET_DIR/ALL_dbsum.tar.gz" -C "$TARGET_DIR/ALL"
 
-#cleaning up .tar.gz files
-rm "$TARGET_DIR"/*.tar.gz
+if [ "$in_place" = "n" ]; then
+    #cleaning up .tar.gz files
+    rm "$TARGET_DIR"/*.tar.gz
+fi
 
 echo "Configuring nmrdbsearch script..."
 
