@@ -74,10 +74,10 @@ fi
 if [ "$in_place" = "n" ]; then
     echo
     echo "Note: You now have two copies of nmrdbsearch:"
-    echo "  Source (for git pull / updates): $SOURCE_DIR"
-    echo "  Installed (used at runtime):     $TARGET_DIR"
-    echo "Future 'git pull' should be run in the source directory."
-    echo "The alias (if added) points to:    $TARGET_DIR/nmrdbsearch"
+    echo "Source (for git pull / updates): $SOURCE_DIR"
+    echo "Installed (used at runtime):     $TARGET_DIR"
+    echo "Future git pulls should be run in the source directory."
+    echo "The alias (if added) points to:  $TARGET_DIR/nmrdbsearch"
     echo
 fi
 
