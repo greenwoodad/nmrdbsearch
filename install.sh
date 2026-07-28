@@ -14,7 +14,7 @@ DEFAULT_DIR="$HOME/nmrdbsearch"
 
 # Ask the user for the target directory, defaulting to the Present Working Directory (PWD)
 read -p "Enter installation target directory [Default: $DEFAULT_DIR]: " TARGET_DIR
-TARGET_DIR="${TARGET_DIR:-$PWD}"
+TARGET_DIR="${TARGET_DIR:-$DEFAULT_DIR}"
 
 # Resolve the absolute path of the target directory
 TARGET_DIR="$(mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd)"
