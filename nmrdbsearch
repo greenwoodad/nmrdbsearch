@@ -3,19 +3,14 @@
 # nmrdbsearch
 # Copyright 2026 University of Cincinnati
 #
-# This script searches various NMR shift databases (NP-MRD, NMRBank, NMRexp, or IMPUR) for matches to a peak list.
-# Supports 1D (1H,13C,31P,19F,11B,29Si) and 2D (1H/X) data. Output includes various summary/result files and molecule images.
+#This program takes in an NMR peak list, either generated manually or by Topspin or MNova, and searches
+#tables of shifts derived from various NMR databases, currently NP-MRD (https://np-mrd.org/), NMRBank 
+#(https://doi.org/10.1039/D4SC08802F), NMRexp (https://doi.org/10.1038/s41597-025-06245-5), and the trace
+#impurity tables from Fulmer et al. (DOI: 10.1021/om100106e). It supports 1D (1H, 13C, 31P, 19F, 11B, 29Si)
+#and 2D (1H/X) data. It returns multiple output files describing possible compounds for each peak, as well 
+#as chemical structures of the top hits. The combined database currently contains ~1.8M unique compounds, 
+#with approximate totals of 22M (13C), 14M (1H), 265k (19F) 35k (31P), 17k (11B), and 3k (29Si) peaks.
 
-# To do: 
-#        maybe HK for all 200
-#        deal with 13C referencing for H2O/D2O
-#        index peak lists? make alternative peaklist files for faster DBs?
-#        add hits/# searched signals to output (maybe save this for html)
-#        test everything including solvent stuff
-#        probably best not to bump all the non-IMPUR hits out -- maybe don't count them in best_results  but then just drop them from the image by default at least
-#       attributions, email some head honchos
-#        check to see if this identifies 2D peak lists (1D and 2D) from TS2, TS3, TS4, TS5 properly. 1D is clearly fine...
-#        check manual and MNova peak lists again, 1D and 2D
 set -u
 export LC_ALL=C # Use C locale for speed
 
@@ -46,7 +41,7 @@ verbose='n'           # 'y' = more output
 
 # Folders and tools
 nmrdbsearchdir="folder_goes_here" #location of nmrdbsearch
-grepcommand="$nmrdbsearchdir/sgrep-1.0/sgrep"         #location of sgrep
+grepcommand="$nmrdbsearchdir/sgrep-1.0/sgrep" #location of sgrep
 
 ####################################################
 # ------------------- FUNCTIONS -------------------#
@@ -389,53 +384,8 @@ fi
 # Identify and format input peaks
 unsorted_peaks="" #initialize peaks
 
-#Here Dimension and Input file are both specified, and Input is a simple list of peaks (1D) or pairs of peaks (2D)
-#with a filename ending in .txt
-if [[ "$Input" == *.txt && -n "$Dimension" ]]; then 
-   case "$Dimension" in
-    '1D')
-        unsorted_peaks=$(awk -v dim=1 '
-            BEGIN { OFS="," }
-            {   if (NF == 0) next
-                n = 0
-                d1 = d2 = ""
-
-                for (i = 1; i <= NF; i++) {
-                    if ($i ~ /^[0-9]*\.[0-9]+$/) {
-                        n++
-                        if (n == 1)      d1 = $i
-                        else if (n == 2) { d2 = $i; break }
-                    }
-                }
-
-                if (n >= 1) { #print first or first two doubles
-                    if (n >= 2) print d1, "\t"d2  
-                    else        print d1 }
-            }
-        ' FS="[\t ,]+" "$input_txt")
-        ;;
-    '2D')
-        unsorted_peaks=$(awk -v dim=2 '
-            BEGIN { OFS="," }
-            {   if (NF == 0) next
-
-                n = 0
-                d1 = d2 = ""
-
-                for (i = 1; i <= NF; i++) {
-                    if ($i ~ /^[0-9]*\.[0-9]+$/) {
-                        n++
-                        if (n == 1)      d1 = $i
-                        else if (n == 2) { d2 = $i; break }
-                    }
-                }
-
-                # For 2D: require two doubles
-                if (n >= 2) print d1, "\t"d2 }
-        ' FS="[\t ,]+" "$input_txt")
-        ;;
-esac
-elif [ -f "$input_xml" ]; then #Dimension isn't specified so we try to infer it from format of input
+#Checking for Topspin or MNova peak tables
+if [ -f "$input_xml" ]; then #Try to infer dimension from format of input
     #this reads in Topspin style 1D peaklist.xml table
     if grep -qs 'Peak1D' "$input_xml" ; then
         Dimension='1D'
@@ -497,11 +447,53 @@ elif [ -f "$input_txt" ]; then #try input_txt
         ' FS="[\t ,]+" "$input_txt" ) 
         [[ "$verbose" == 'y' ]] && echo "input file set to $input_txt, Dimension set to $Dimension"
     fi
+fi     
+
+if [[ "$Input" == *.txt ]] && [[ -z "$unsorted_peaks" ]]; then  #none of the above caught the peaks, and input file is specified
+#this section presumes Input is a simple list of peaks (1D) or pairs of peaks (2D) with proton specified first
+    unsorted_peaks=$(awk '
+    {
+        # 1. Strip hidden Windows carriage returns (\r)
+        gsub(/\r/, "", $0)
+
+        # 2. Clean up any accidental commas if they appear
+        gsub(/,/, " ", $0)
+
+        # 3. Skip completely empty lines
+        if (NF == 0) next
+
+        # 4. Output based on how many fields are found
+        if (NF >= 2) {
+            print $1 "," $2
+        } else if (NF == 1) {
+            print $1
+        }
+    }
+    ' "$input_txt")
+
 fi
 
 if [ -z "$unsorted_peaks" ]; then
     echo "Error: No peaks or input file not recognized. If using MNova, use 'copy table' and paste the full results (including header) into a file named peak.txt in pdata/1"
     cleanup; exit 1
+fi
+
+#if Dimension is not set yet, try to infer from format of $unsorted_peaks
+if [[ -z "$Dimension" ]]; then      
+    first_line=$(echo "$unsorted_peaks" | head -n 1)
+
+    if [[ "$first_line" =~ ^[^,]+,[^,]+$ ]]; then
+        Dimension='2D'
+        echo "Dimension set to 2D"
+        echo "You specified $nuc1 as nuc1 and $nuc2 as nuc2. Make sure your input file is of the form $nuc1 shift, $nuc2 shift!"
+        sleep 2
+    elif [[ "$first_line" =~ ^[^,]+$ ]]; then
+        Dimension='1D'
+        echo "Dimension set to 1D"
+    else
+        echo "Error: Dimension not set and cannot be inferred for input file format"
+        cleanup; exit 1
+    fi
 fi
 
 currentpeaks=$(echo "$unsorted_peaks" | sort -t, -k1,1n)  #sort peaks from low to high
@@ -944,7 +936,7 @@ while IFS=$'\n' read -r line_data; do
     fi
 
 if [ -n "$current_accessions" ]; then
-	current_accessions_short=$(echo "$current_accessions" | awk 'NR==FNR{val[$1]; next} $4 in val {print $4}' - "$full_search_summary") #accessions in both
+    current_accessions_short=$(echo "$current_accessions" | awk 'NR==FNR{val[$1]; next} $4 in val {print $4}' - "$full_search_summary") #accessions in both
     for_current_accessions=$(grep -wFf <(echo "$current_accessions_short") "$full_search_summary") #get full line for appropriate accessions
 
     if [ "$dbstring" == "ALL" ]; then #holding onto IMPUR hits if using ALL db
