@@ -188,7 +188,7 @@ Show_Usage() {
     echo " -t, --tolerance     Set tolerance for matching peaks."
     echo " -t2, --tolerance2   Set tolerance for 2D indirect dimension."
     echo " -m, --mixmode       Specify if running on complex mixture (slow for large databases)."
-    echo " -im, --impurinc     Include IMPUR results in image for ALL database searches."
+    echo " -im, --impureinc    Include IMPUR results in image for ALL database searches."
     echo " -v, --verbose       Displays additional messages as the program runs."
     echo ""
     echo "For more information, see the README:"
