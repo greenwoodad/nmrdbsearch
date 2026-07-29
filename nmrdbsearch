@@ -112,10 +112,13 @@ hopcroft_karp_match() {
                 [[ ! "$v" =~ ^[0-9]+$ ]] && continue
                 if [[ -z "${pairB[v]+exists}" ]]; then continue; fi # Check if index exists in pairB to prevent unbound variable crash
 
-                local p=${pairB[v]}
-                if [[ -n "$p" && "$p" =~ ^[0-9]+$ ]] && [[ ${dist[$p]:--1} -eq -1 ]]; then
-                    dist[$p]=$((dist[u]+1)); queue+=($p)
-                elif [[ "$p" -eq -1 ]]; then found=0; fi
+                local p=${pairB[$v]:-1} 
+                if [[ $p -ge 0 ]] && [[ ${dist[$p]:--1} -eq -1 ]]; then
+                    dist[$p]=$(( dist[u] + 1 ))
+                    queue+=($p)
+                elif [[ $p -eq -1 ]]; then
+                    found=0
+                fi
             done
         done
         return $found
@@ -153,19 +156,19 @@ hopcroft_karp_match() {
 Get_Solvent() {
     local inputsolvent=$1
     local solvtable="acetic Acetic Acetic-H4\n           
-        acetone Acetone Acetone-H6\n           
-        CD2Cl2 CH2Cl2 CD2Cl2 Dichloromethane\n         
-        CD3CN CH3CN Acetonitrile CD3CN CD3CN_SPE\n         
-        CDCl3 Chloroform CHCl3 CDCl3\n          
-        C6D6 C6D6 Benzene C6H6 C6D6_smalvol C6D6+Dioxane\n         
-        DMSO DMSO DMSO-H6 HDMSO\n           
-        DMF DMF DMF-H7\n            
-        D2O Plasma H2O H2O+D2O H2O+D2O_salt Urine Water D2O D2O_salt Juice T_H2O+D2O+Me4NCl T_H2O+D2O+NaAc T_H2O+D2O+Pivalate\n  
-        MeOD MeOD Methanol Methanol-H4 CH3OH+D2O CH3CN+D2O CD3OD_SPE T_MeOD\n       
-        pyridine Pyr Pyr-H5 Pyridine C5D5N\n           
-        THF-d8 THF THF-H8\n            
-        PhMe-d8 Tol Tol-H8 Toluene\n
-        all All ALL"
+acetone Acetone Acetone-H6\n           
+CD2Cl2 CH2Cl2 Dichloromethane\n         
+CD3CN CH3CN Acetonitrile CD3CN_SPE\n         
+CDCl3 Chloroform CHCl3\n          
+C6D6 Benzene C6H6 C6D6_smalvol C6D6+Dioxane\n         
+DMSO DMSO-H6 HDMSO\n           
+DMF DMF-H7\n            
+D2O Plasma H2O H2O+D2O H2O+D2O_salt Urine Water D2O_salt Juice T_H2O+D2O+Me4NCl T_H2O+D2O+NaAc T_H2O+D2O+Pivalate\n  
+MeOD Methanol Methanol-H4 CH3OH+D2O CH3CN+D2O CD3OD_SPE T_MeOD\n       
+pyridine Pyr Pyr-H5 Pyridine C5D5N\n           
+THF THF-d8 THF-H8\n            
+PhMe Tol PhMe-d8 Tol-H8 Toluene\n
+all All ALL"
     solvent=$(echo "$solvtable" | sed 's/^[[:space:]]*//' | grep -w "$inputsolvent" | cut -f1 -d' ' | tr -d '[:space:]' )
     echo "$solvent"
 }
@@ -206,10 +209,10 @@ parse_flags() {
             -n2|--nucleus2) shift; nuc2="$1" ;;
             -t|--tolerance) shift; optol1="$1" ;;
             -t2|--tolerance2) shift; optol2="$1" ;;
-            -m|--mixmode) shift; mixturemode='y' ;;
-            -im|--impureinc) shift; impur_in_img='y' ;;
-            -v|--verbose) shift; verbose='y' ;;
-            -*) echo "Unknown option: \"$1\""; Show_Usage; exit 1 ;;
+            -m|--mixmode) mixturemode='y' ;;
+            -im|--impureinc) impur_in_img='y' ;;
+            -v|--verbose) verbose='y' ;;
+            -*) echo "Unknown option: \"$1\""; Show_Usage; exit 0 ;;
             *) datadirectory="$1" ;;
         esac
         shift
@@ -218,6 +221,7 @@ parse_flags() {
 
 #Remove temporary files
 cleanup() {
+    set +u
     rm "$search_output" 2>/dev/null
     rm "$search_output_full.for" 2>/dev/null
     rm "$search_output_full" 2>/dev/null
@@ -498,7 +502,7 @@ fi
 
 currentpeaks=$(echo "$unsorted_peaks" | sort -t, -k1,1n)  #sort peaks from low to high
 f1peaks=$(echo "$currentpeaks" | cut -f1 -d',')           #This is just the peaks for 1D data (no amplitutes) and just the f1 peaks for 2D data
-num_data_peaks=$(wc -l <<< "$currentpeaks")               #count the peaks or pairs of peaks
+num_data_peaks=$(echo "$currentpeaks" | wc -l)            #count the peaks or pairs of peaks
 
 # Check for loss of peaks due to rounding/formatting collisions
 if [ "$Dimension" == '2D' ]; then
@@ -822,7 +826,7 @@ while IFS=$'\n' read -r accession; do
                 print pre mid post;
             }'
         )
-        sed -i "/$(printf '%s' "$full_search_summary_line" | sed 's/[\/&]/\\&/g')/c\\$new_full_search_summary_line" \
+        sed -i "/$(printf '%s' "$full_search_summary_line" | sed 's/[\/&.*[\]^$\\]/\\&/g')/c\\$new_full_search_summary_line" \
             "$full_search_summary"
     fi
     hitssorted_summary_line=$(grep -w "$accession" "$hitssorted_summary" | head -n1)
@@ -836,7 +840,7 @@ while IFS=$'\n' read -r accession; do
                 print pre mid post;
             }'
         )
-        sed -i "/$(printf '%s' "$hitssorted_summary_line" | sed 's/[\/&]/\\&/g')/c\\$new_hitssorted_summary_line" \
+        sed -i "/$(printf '%s' "$hitssorted_summary_line" | sed 's/[\/&.*[\]^$\\]/\\&/g')/c\\$new_hitssorted_summary_line" \
             "$hitssorted_summary"
     fi
 
@@ -926,8 +930,8 @@ while IFS=$'\n' read -r line_data; do
 
     IFS=', ' read -r num1 num2 <<< "$line_data"
     if [ "$Dimension" == '2D' ]; then
-        formatted_peaks=$(printf "$decprec1, $decprec2" "$num1" "$num2")
-        echo "${formatted_peaks}" >> "$shiftordered_results"
+        formatted_2Dpeaks=$(printf "$decprec1, $decprec2" "$num1" "$num2")
+        echo "${formatted_2Dpeaks}" >> "$shiftordered_results"
         current_peak2=$(echo "${line_data}" | sed 's/.*,//' | sed 's/=[ \t]*/=/' | bc -l | xargs printf "$decprec2")
         current_accessions=$(grep -F ", $current_peak2" "$search_output" | grep -F ", $current_peak1" | sed 's/, .*//' | sort -u) #accessions for current peak
     else
