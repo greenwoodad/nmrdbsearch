@@ -19,11 +19,6 @@ It uses Open Babel (https://openbabel.org/index.html) to draw molecule images of
 ```sh
 git clone https://github.com/greenwoodad/nmrdbsearch
 ```
-or 
-
-```sh
-git clone https://(your github username)@github.com/greenwoodad/nmrdbsearch.git
-```
 
 followed by:
 ```sh
@@ -33,7 +28,7 @@ chmod +x ./nmrdbsearch/install.sh
 
 The install script will ask where to install the program, copy nmrdbsearch to the specified location, and install dependencies (Open Babel and sgrep-1.0).
 
-If you get an error like make: command not found you will need to install development tools.
+The install script compiles sgrep from source, which requires build tools. If you get an error like 'make: command not found' you will need to install development tools.
 
 Ubuntu, Linux Mint, Debian, Pop!_OS:
 ```sh
@@ -61,7 +56,7 @@ alias nmrdbsearch="/path/to/nmrdbsearch/nmrdbsearch"
 
 where /path/to/ should be replaced with the location of the nmrdbsearch directory.
 
-Note that you will need to restart your shell or run: source "~/.bashrc" before the alias will work!
+Note that you will need to restart your shell or run: source ~/.bashrc before the alias will work!
 
 The install script will unpack the peak lists, expanding the total size to about 7 GB.
 **This is a lengthy process and may take up to 5 minutes.**
@@ -85,7 +80,7 @@ https://openbabel.org/docs/Installation/install.html
 
 ## Usage
 
-Note: The databases this program searches contain approximately 89% data collected in CDCl3, 8% in DMSO, and 3% in other solvents. Data collected in one solvent will not generally return good matches from entries in different solvents, so the best results can be expected for data collected in CDCl3. Using 13C (or 19F/31P/11B/29Si) 1D data or 1H/13C 2D data tends to provide better results than 1H 1D data, given the relatively poor dispersion of 1H shifts. Although an exact match is unlikely, observing common structural motifs in the structures_.svg image file may provide insight into the identity of your compound. Searching the default ALL database will usually work well unless doing mixture analysis (see below).
+Note: The databases this program searches contain approximately 89% data collected in CDCl3, 8% in DMSO, and 3% in other solvents. Data collected in one solvent will not generally return good matches from entries in different solvents, so the best results can be expected for data collected in CDCl3. Using 13C (or 19F/31P/11B/29Si) 1D data or 1H/13C 2D data tends to provide better results than 1H 1D data, given the relatively poor dispersion of 1H shifts. Although an exact match is unlikely, observing common structural motifs in the structures_(db).svg image file may provide insight into the identity of your compound. Searching the default ALL database will usually work well unless doing mixture analysis (see below).
 
 ### Options
 
@@ -128,23 +123,23 @@ When run in the directory of a Bruker dataset with a peak list of the form pdata
 
 If all you have is a peak list (in a file like file.txt), the program can be run as long as these details are provided as options. At minimum, specify the peak file with -i along with -dim for dimension (1D or 2D) and -n for nucleus (and -n2 for the indirect nucleus if dim is 2D). It is advisable to also supply the solvent with -s; otherwise it will be set to all.
 
-By default, the program runs on all databases (ALL), which can take about a minute to complete. Smaller databases (NP, NMRBank, and IMPUR) will be faster. Under normal operation, matches that have high match ratios (peak hits / total signals for a compound) can be dropped from the results files if the number of hits is still low compared to the number of input peaks, depending on the quality of the other matches. This may be undesirable if your peak list represents a complex mixture. Set mixture mode to y with the -m flag to retain these results as well, but be aware that this will slow down the program significantly for large databases (ALL and NMRexp).
+By default, the program runs on all databases (ALL), which can take about a minute to complete. Smaller databases (NP, NMRBank, and IMPUR) will be faster. Under normal operation, matches that have high match ratios (peak hits / total signals for a compound) can be dropped from the results files if the number of hits is still low compared to the number of input peaks, depending on the quality of the other matches. This may be undesirable if your peak list represents a complex mixture. Set mixture mode with the -m flag to retain these results as well, but be aware that this will slow down the program significantly for large databases (ALL and NMRexp).
 
 When running with the ALL database, hits from the IMPUR database will be retained even if they are considered weak (only a few peak hits), because the compounds in this database are more likely to be present as impurities. By default they are excluded from the structures_ALL.svg image file, but can be included by specifying the -im flag.
 
 ## Notes about 2D Data
 
-Currently, database entries are identified as matches for 2D data if they contain 1H and X shifts that are both within their respective tolerances for a peak in the input table. This means that the search identifies possible HMBC peaks as well as HSQC peaks. On the other hand, it produces more false positives than if only entries’ HSQC peaks were considered. 
+Database entries are identified as matches for 2D data if they contain 1H and X shifts that are both within their respective tolerances for a peak in the input table. The search does not distinguish between HSQC and HMBC correlations. If you are searching HSQC data, HMBC-only correlations in the database will appear as false positives, and vice versa. On the other hand, this allows for a search of nearly the entire database instead of the very small fraction of accessions with HSQC data available. Additionally, it allows for searching with 'virtual' 2D datasets constructed from 1D data (for example, a 1H 1D and a 19F 1D) for non-mixture samples.   
 
 Match ratios for 2D data are calculated based on 1H shifts filtered by the X nucleus.
 
 ## Results Files
 
-This program produces multiple results files in $datadirectory/nmrdbsearch, but the most important files to check are **best_hits_summary_** and **structures_.svg**. The best_hits_summary_ file shows the top 20 hits (plus some IMPUR hits if dbstring=ALL) sorted by the match ratio given by Hopcroft–Karp bipartite matching. This is defined as the number of one-to-one matches (a queried peak cannot match multiple DB peaks and vice versa) divided by the total number of peaks in the database for that compound. Note that this is distinct from the match ratio given in the full_summary_, hitssorted_full_summary_, and shiftordered_results_ files. A value of 1.0 is a good sign of an exact match (except for compounds with only a small number of signals), and a value above 0.8 is likely to indicate strong structural similarity. Also reported are the number of peaks that the given accession uniquely matched (usually 0 unless the shift is highly unusual, more common for nuclei like 11B and 29Si), the accession, and the compound name (if available).
+This program produces multiple results files in $datadirectory/nmrdbsearch, but the most important files to check are **best_hits_summary_(db)** and **structures_(db).svg**. The best_hits_summary_(db) file shows the top 20 hits (plus some IMPUR hits if dbstring=ALL) sorted by the match ratio given by Hopcroft–Karp bipartite matching. This is defined as the number of one-to-one matches (a queried peak cannot match multiple DB peaks and vice versa) divided by the total number of peaks in the database for that compound. Note that this is distinct from the match ratio given in the full_summary_(db), hitssorted_full_summary_(db), and shiftordered_results_(db) files. A value of 1.0 is a good sign of an exact match (except for compounds with only a small number of signals), and a value above 0.8 is likely to indicate strong structural similarity. Also reported are the number of peaks that the given accession uniquely matched (usually 0 unless the shift is highly unusual, more common for nuclei like 11B and 29Si), the accession, and the compound name (if available).
 
-The full_summary_, hitssorted_full_summary_, and shiftordered_results_ files give the top 200 (maxaccessions in the script) results, formatted in different ways. In full_summary_, they are sorted by the “many-to-one” match ratio defined as hits / compound peaks, where a single queried peak or peak pair can match multiple database peaks (but not vice versa). In hitssorted_full_summary_, they are sorted by the total number of hits, and in shiftordered_results_, results are clustered by the queried peaks (or pairs of peaks). There are also individual files corresponding to each of the best accessions (from best_hits_summary_) where the database peaks for that accession can be compared to the queried peaks. This can be useful to check if the last few unmatched queried peaks are actually just outside the tolerance window for a given accession.
+The full_summary_(db), hitssorted_full_summary_(db), and shiftordered_results_(db) files give the top 200 (maxaccessions in the script) results, formatted in different ways. In full_summary_(db), they are sorted by the “many-to-one” match ratio defined as hits / compound peaks, where a single queried peak or peak pair can match multiple database peaks (but not vice versa). In hitssorted_full_summary_(db), they are sorted by the total number of hits, and in shiftordered_results_(db), results are clustered by the queried peaks (or pairs of peaks). There are also individual files corresponding to each of the best accessions (from best_hits_summary_(db)) where the database peaks for that accession can be compared to the queried peaks. This can be useful to check if the last few unmatched queried peaks are actually just outside the tolerance window for a given accession.
 
-Finally, structures_.svg shows a grid of the structures of the best accessions, with the accession name and Hopcroft–Karp match ratio displayed under each. Common structural motifs can often be observed by studying the matches.
+Finally, structures_(db).svg shows a grid of the structures of the best accessions, with the accession name and Hopcroft–Karp match ratio displayed under each. Common structural motifs can often be observed by studying the matches.
 
 ## Note about Database Processing:
 
