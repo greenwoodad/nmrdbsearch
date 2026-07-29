@@ -26,7 +26,11 @@ while true; do
             read -r -p "Enter installation target directory (will be created if needed): " TARGET_DIR
             # If user just hits Enter, fall back to PWD
             TARGET_DIR="${TARGET_DIR:-$DEFAULT_DIR}"
-            TARGET_DIR="$(mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd)"
+
+			TARGET_DIR="$(mkdir -p "$TARGET_DIR" && cd "$TARGET_DIR" && pwd)" \
+            || { echo "Error: could not create $TARGET_DIR"; exit 1; }
+            [[ -z "$TARGET_DIR" ]] && { echo "Error: TARGET_DIR is empty after resolution"; exit 1; }
+			
             break
             ;;
         * )
@@ -87,7 +91,7 @@ find "$TARGET_DIR" -type f -name "Makefile" | while read -r makefile; do
     SUB_DIR="$(dirname "$makefile")"
     echo "Running make in: $SUB_DIR"
     # Run make inside a subshell to avoid breaking the script's directory state
-    (cd "$SUB_DIR" && make)
+    (cd "$SUB_DIR" && make) || { echo "make failed in $SUB_DIR"; exit 1; }
 done
 
 DB_LIST=( 'NMRBank' 'NMRexp' 'NP' 'IMPUR' 'ALL' )
@@ -148,8 +152,8 @@ fi
 NUC_LIST=( '1H' '13C' '31P' '19F' '11B' '29Si' )
 SOLVENT_LIST=( \
   'DMSO' 'C2D2Cl4' 'acetic' 'CD2Cl2' 'CD3CN' 'acetone' \
-  'CF3CO2D' 'DMF' 'mixed' 'D2O' 'DMF' 'MeOD' 'pyridine' \
-  'not_known' 'THF' 'PhMe' 'C6D6' 'DMSO' 'CDCl3'  \
+  'CF3CO2D' 'DMF' 'mixed' 'D2O' 'MeOD' 'pyridine' \
+  'not_known' 'THF' 'PhMe' 'C6D6' 'CDCl3'  \
 )
 
 NUM_SOLVENTS=${#SOLVENT_LIST[@]}
@@ -178,7 +182,7 @@ draw_progress() {
 # Step counts (for progress bar)
 ###############################################################################
 
-# Section 1: per-DB "all solvent" peaklists (approximate: one step per nuc×DB)
+# Section 1: per-DB "all solvent" peaklists (one step per nuc×DB)
 TOTAL_STEPS_1=$(( NUM_NUCLEI * NUM_DBS ))
 
 # Section 2: ALL peaklists (only 1H and 13C)
@@ -296,36 +300,33 @@ for ((db_idx=0; db_idx<NUM_DBS; db_idx++)); do
         for ((nuc_idx=0; nuc_idx<NUM_NUCLEI; nuc_idx++)); do
             nuc=${NUC_LIST[nuc_idx]}
 
-            # Source: per-DB except ALL, which lives in TARGET_DIR
-            src_file="$TARGET_DIR/$db/accessions_${nuc}_${solvent}"
-            if [[ "$db" == "ALL" ]]; then
-                src_file="$TARGET_DIR/$db/accessions_${nuc}_${solvent}"
-            fi
-
-            # Only track progress if DB actually uses this nucleus (CDCl3 marker)
+            # Only proceed if DB actually uses this nucleus (CDCl3 marker)
             if [ -f "$TARGET_DIR/$db/accessions_${nuc}_CDCl3" ]; then
                 current_step=$((current_step + 1))
                 draw_progress "$current_step" "$TOTAL_STEPS_3"
-            fi
 
-            [ ! -f "$src_file" ] && continue
+                # Source file
+                src_file="$TARGET_DIR/$db/accessions_${nuc}_${solvent}"
 
-            out_file="$TARGET_DIR/$db/peaks_${nuc}_${solvent}"
-            >"$out_file"
+                [ ! -f "$src_file" ] && continue
 
-            # Expand CSV accession->peaks into one line per peak
-            gawk -F',' -v OFS=',' '
-                {
-                    accession  = $1
-                    shifts_raw = substr($0, index($0, FS) + 1)
-                    n = split(shifts_raw, a, ",")
-                    for (k = 1; k <= n; k++) {
-                        print a[k], accession
+                out_file="$TARGET_DIR/$db/peaks_${nuc}_${solvent}"
+                >"$out_file"
+
+                # Expand CSV accession->peaks into one line per peak
+                gawk -F',' -v OFS=',' '
+                    {
+                        accession  = $1
+                        shifts_raw = substr($0, index($0, FS) + 1)
+                        n = split(shifts_raw, a, ",")
+                        for (k = 1; k <= n; k++) {
+                            print a[k], accession
+                        }
                     }
-                }
-            ' "$src_file" >> "$out_file"
+                ' "$src_file" >> "$out_file"
 
-            LC_ALL=C sort -n -o "$out_file" "$out_file"
+                LC_ALL=C sort -n -o "$out_file" "$out_file"			
+            fi
         done
     done
 done
