@@ -121,7 +121,7 @@ nmrdbsearch [OPTIONS]... path/to/data (uses current directory as default)
 
 When run in the directory of a Bruker dataset with a peak list of the form pdata/1/peaklist.xml or pdata/1/peak.txt, no options need to be specified, as long as the acqu file is present. The program will extract the solvent and nucleus/nuclei from the acqu file and infer the dimensionality from the peak list format.
 
-If all you have is a peak list (in a file like file.txt), the program can be run as long as these details are provided as options. At minimum, specify the peak file with -i along with -dim for dimension (1D or 2D) and -n for nucleus (and -n2 for the indirect nucleus if dim is 2D). It is advisable to also supply the solvent with -s; otherwise it will be set to all.
+If all you have is a peak list (in a file like file.txt), the program can be run as long as these details are provided as options. At minimum, specify the peak file with -i along with -n for nucleus (and -n2 for the indirect nucleus if dim is 2D). It is advisable to also supply the solvent with -s; otherwise it will be set to all.
 
 By default, the program runs on all databases (ALL), which can take about a minute to complete. Smaller databases (NP, NMRBank, and IMPUR) will be faster. Under normal operation, matches that have high match ratios (peak hits / total signals for a compound) can be dropped from the results files if the number of hits is still low compared to the number of input peaks, depending on the quality of the other matches. This may be undesirable if your peak list represents a complex mixture. Set mixture mode with the -m flag to retain these results as well, but be aware that this will slow down the program significantly for large databases (ALL and NMRexp).
 
