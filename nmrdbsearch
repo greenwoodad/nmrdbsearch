@@ -728,7 +728,7 @@ if [ "$mixturemode" == "n" ]; then
     mv "$accessionsfile.tmp" "$accessionsfile"
 else
     if [ ! "$dbstring" == "IMPUR" ]; then
-        echo -e "\nmixturemode is set, this may take a while!"
+        echo -e "\nmixturemode is set and the database is large, this may take a long time! Code is not yet equipped to handle this efficiently!"
     fi
 fi
 
