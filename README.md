@@ -30,7 +30,7 @@ The install script will ask where to install the program, copy nmrdbsearch to th
 
 The install script compiles sgrep from source, which requires build tools. If you get an error like 'make: command not found' you will need to install development tools.
 
-Ubuntu, Linux Mint, Debian, Pop!_OS:
+Ubuntu (default for WSL/Windows Subsystem for Linux), Linux Mint, Debian, Pop!_OS:
 ```sh
 sudo apt update && sudo apt install build-essential
 ```
