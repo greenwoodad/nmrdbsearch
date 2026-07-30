@@ -542,6 +542,7 @@ else
     fi
 fi
 
+currentpeaks="$formatted_peaks" #update currentpeaks
 num_data_peaks="$new_count" #update num_data_peaks
 
 if [ "$Dimension" == '2D' ]; then
