@@ -333,7 +333,8 @@ else
         solvent=$(Get_Solvent "$opsolvent") #get solvent string corresponding to opsolvent 
     else
         echo "No solvent given as option and no acqu file found in $acqufile, so using solvent=all."; 
-        solvent=$(Get_Solvent 'all') #get solvent string corresponding to opsolvent 
+        opsolvent='all'
+        solvent=$(Get_Solvent 'all') #get solvent string corresponding to opsolvent         
     fi
 fi
 
