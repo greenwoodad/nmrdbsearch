@@ -928,7 +928,6 @@ sort -n -r -o "$best_hits_summary" "$best_hits_summary" #re-sort as new hitrate 
 
 if [ "$dbstring" == 'ALL' ]; then       #ignore IMPUR lines when stripping down to top maxresults lines
     awk -v max="$maxresults" '
-        NR == 1 { next } 
         /IMPUR/ && nonimpur < max { print; next } # keep all IMPUR above the last non-IMPUR
         nonimpur < max { print; nonimpur++ }   # keep first max non-IMPUR
     ' "$best_hits_summary" > "$best_hits_summary.chopped"
