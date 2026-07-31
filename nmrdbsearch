@@ -373,10 +373,6 @@ if [ -n "$optol1" ] && [ "$optol1" != "$tolerance" ]; then
     tolerance="$optol1"
 fi
 
-if [[ "$nuc2" == '31P' || "$nuc2" == '19F' || "$nuc2" == '11B' || "$nuc2" == '29Si' ]]; then
-    tolerance2="$tolerance3"   #use larger tolerance for these nuclei by default
-fi
-
 if [ -n "$optol2" ] && [ "$optol2" != "$tolerance2" ]; then
     echo "Using $optol2 for $nuc2 tolerance"
     sleep 2
@@ -502,6 +498,22 @@ if [[ -z "$Dimension" ]]; then
     else
         echo "Error: Dimension not set and cannot be inferred for input file format"
         cleanup; exit 1
+    fi
+fi
+
+#Now that Dimension is set, change db to NMRexp if necessary
+if [ "$Dimension" == '2D' ]; then
+    if [ -z "$nuc2" ]; then
+        echo "Error: Nucleus 2 is unset"; cleanup; exit 1   
+    elif [[ "$nuc2" == '31P' || "$nuc2" == '19F' || "$nuc2" == '11B' || "$nuc2" == '29Si' ]]; then
+        tolerance2="$tolerance3"   #use larger tolerance for these nuclei by default
+        if [ "$hetsearch" == 'n' ]; then
+            echo "Error: Nucleus $nuc2 not supported for database $dbstring. Switching to NMRexp database."
+            hetsearch='y'
+            dbstring='NMRexp'
+            dbfolder='NMRexp' 
+            largeDB='y' 
+        fi
     fi
 fi
 
@@ -996,7 +1008,7 @@ while IFS=$'\n' read -r accession; do
             prev_peaks=$(printf "$decprec1, $decprec2" "$num1" "$num2")
         fi
 
-        if awk -v s="$prev_peaks" -v t="$accession" '/^-?[0-9.]+[[:space:],]*[0-9.]*$/{cs=$0} cs==s && $0~t{f=1;exit} END{exit !f}' "$shiftordered_results"; then
+        if awk -v s="$prev_peaks" -v t="$accession" '/^-?[0-9.]+[[:space:],]*-?[0-9.]*$/{cs=$0} cs==s && $0~t{f=1;exit} END{exit !f}' "$shiftordered_results"; then
             expshifts+="$prev_peaks ***MATCH***"$'\n' #indicates this input peak has a match in $accession
         else
             expshifts+="$prev_peaks"$'\n'
