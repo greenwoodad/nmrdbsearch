@@ -729,7 +729,7 @@ if [ "$mixturemode" == "n" ]; then
     
     sort -n "$accessionsfile" | tail -n "$maxaccessions" > "$accessionsfile.tmp" #remove all but the top $maxaccessions" sorted by hits
     
-    [[ "$dbstring" == 'ALL' ]] && echo "$IMPURlines" >> "$accessionsfile.tmp" #add in the IMPUR lines if dbstring is 'ALL'
+    [[ "$dbstring" == 'ALL' && -n "$IMPURlines" ]] && echo "$IMPURlines" >> "$accessionsfile.tmp" #add in the IMPUR lines if dbstring is 'ALL'
 
     mv "$accessionsfile.tmp" "$accessionsfile"
 else
@@ -874,7 +874,7 @@ cutoff=$((maxresults + 40))
 top_hits_data=$(head -n "$cutoff" "$full_search_summary" | tail -n +2)
 
 # If dbstring='ALL': add IMPURlines back into summary
-[[ "$dbstring" == 'ALL' ]] && top_hits_data="$top_hits_data"$'\n'"$IMPURlines" 
+[[ "$dbstring" == 'ALL' && -n "$IMPURlines" ]] && top_hits_data="$top_hits_data"$'\n'"$IMPURlines" 
 
 top_hits_data=$(printf '%s\n' "$top_hits_data" | sort -u)
 best_accessions=$(echo "$top_hits_data" | awk 'NF && $4 != "" {print $4}')
