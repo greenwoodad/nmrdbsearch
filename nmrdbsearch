@@ -169,7 +169,7 @@ pyridine Pyr Pyr-H5 Pyridine C5D5N\n
 THF THF-d8 THF-H8\n            
 PhMe Tol PhMe-d8 Tol-H8 Toluene\n
 all All ALL"
-    solvent=$(echo "$solvtable" | sed 's/^[[:space:]]*//' | grep -w "$inputsolvent" | cut -f1 -d' ' | tr -d '[:space:]' )
+    solvent=$(echo "$solvtable" | sed 's/^[[:space:]]*//' | grep -w "$inputsolvent" | cut -f1 -d' ' | tr -d '[:space:]' | head -n1 )
     echo "$solvent"
 }
 # Show usage/help
