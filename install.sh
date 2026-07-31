@@ -91,7 +91,7 @@ find "$TARGET_DIR" -type f -name "Makefile" | while read -r makefile; do
     SUB_DIR="$(dirname "$makefile")"
     echo "Running make in: $SUB_DIR"
     # Run make inside a subshell to avoid breaking the script's directory state
-    (cd "$SUB_DIR" && make) || { echo "make failed in $SUB_DIR", install development tools! (See README); exit 1; }
+    (cd "$SUB_DIR" && make) || { echo "make failed in $SUB_DIR, install development tools! (See README)"; exit 1; }
 done
 
 DB_LIST=( 'NMRBank' 'NMRexp' 'NP' 'IMPUR' 'ALL' )
