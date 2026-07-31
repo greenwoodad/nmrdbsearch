@@ -373,6 +373,10 @@ if [ -n "$optol1" ] && [ "$optol1" != "$tolerance" ]; then
     tolerance="$optol1"
 fi
 
+if [[ "$nuc2" == '31P' || "$nuc2" == '19F' || "$nuc2" == '11B' || "$nuc2" == '29Si' ]]; then
+    tolerance2="$tolerance3"   #use larger tolerance for these nuclei by default
+fi
+
 if [ -n "$optol2" ] && [ "$optol2" != "$tolerance2" ]; then
     echo "Using $optol2 for $nuc2 tolerance"
     sleep 2
