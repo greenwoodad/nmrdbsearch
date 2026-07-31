@@ -844,8 +844,11 @@ while IFS=$'\n' read -r accession; do
                 print pre mid post;
             }'
         )
-        sed -i "/$(printf '%s' "$full_search_summary_line" | sed 's/[\/&.*[\]^$\\]/\\&/g')/c\\$new_full_search_summary_line" \
-            "$full_search_summary"
+        old="$full_search_summary_line" new="$new_full_search_summary_line" \
+        awk 'index($0, ENVIRON["old"]) { print ENVIRON["new"]; next } 1' \
+        "$full_search_summary" > "$full_search_summary.tmp" \
+        && mv "$full_search_summary.tmp" "$full_search_summary"
+
     fi
     hitssorted_summary_line=$(grep -w "$accession" "$hitssorted_summary" | head -n1)
     if [ -n "$hitssorted_summary_line" ]; then
@@ -858,8 +861,11 @@ while IFS=$'\n' read -r accession; do
                 print pre mid post;
             }'
         )
-        sed -i "/$(printf '%s' "$hitssorted_summary_line" | sed 's/[\/&.*[\]^$\\]/\\&/g')/c\\$new_hitssorted_summary_line" \
-            "$hitssorted_summary"
+        old="$hitssorted_summary_line" new="$new_hitssorted_summary_line" \
+        awk 'index($0, ENVIRON["old"]) { print ENVIRON["new"]; next } 1' \
+        "$hitssorted_summary" > "$hitssorted_summary.tmp" \
+        && mv "$hitssorted_summary.tmp" "$hitssorted_summary"
+
     fi
 
 done < <(echo "$filtered_unique_accessions")
@@ -959,7 +965,12 @@ while IFS=$'\n' read -r line_data; do
 
 if [ -n "$current_accessions" ]; then
     current_accessions_short=$(echo "$current_accessions" | awk 'NR==FNR{val[$1]; next} $4 in val {print $4}' - "$full_search_summary") #accessions in both
-    for_current_accessions=$(grep -wFf <(echo "$current_accessions_short") "$full_search_summary") #get full line for appropriate accessions
+    
+    if [ -n "$current_accessions_short" ]; then
+        for_current_accessions=$(grep -wFf <(echo "$current_accessions_short") "$full_search_summary") #get full line for appropriate accessions
+    else
+        for_current_accessions=""
+    fi
 
     if [ "$dbstring" == "ALL" ]; then #holding onto IMPUR hits if using ALL db
         IMPUR_for_current=$(echo "$for_current_accessions" | grep 'IMPUR' || true)
@@ -969,6 +980,12 @@ if [ -n "$current_accessions" ]; then
     else
         for_current_accessions=$(echo "$for_current_accessions" | head -n "$maxresults")
     fi
+
+    # ensure best accessions are always included
+
+    best_accessions_list=$(tail -n +2 "$best_hits_summary" | awk '{print $4}')
+    guaranteed=$(grep -wFf <(echo "$best_accessions_list") "$full_search_summary" | grep -wFf <(echo "$current_accessions"))
+    for_current_accessions=$(printf '%s\n%s\n' "$for_current_accessions" "$guaranteed" | sort -u)
 
     if [ -n "$for_current_accessions" ]; then
         while IFS=$'\n' read -r full_search_summary_line; do
