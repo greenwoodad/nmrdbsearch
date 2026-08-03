@@ -314,7 +314,7 @@ for ((db_idx=0; db_idx<NUM_DBS; db_idx++)); do
                 >"$out_file"
 
                 # Expand CSV accession->peaks into one line per peak
-                gawk -F',' -v OFS=',' '
+                awk -F',' -v OFS=',' '
                     {
                         accession  = $1
                         shifts_raw = substr($0, index($0, FS) + 1)
