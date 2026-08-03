@@ -3,7 +3,7 @@
 This program takes in an NMR peak list, either generated manually or by Topspin or MNova, and searches tables of shifts
 derived from various NMR databases, currently NP-MRD (https://np-mrd.org/), NMRBank (https://doi.org/10.1039/D4SC08802F),
 NMRexp (https://doi.org/10.1038/s41597-025-06245-5), and the trace impurity tables from Fulmer et al.
-(DOI: [10.1021/om100106e](https://doi.org/10.1021/om100106e)). It supports 1D (1H, 13C, 31P, 19F, 11B, 29Si) and 2D (1H/X) data. It returns multiple output files describing possible compounds for each peak, as well as chemical structures of the top hits. The combined database currently contains ~1.8M unique compounds, with approximate totals of 22M (13C), 14M (1H), 265k (19F) 35k (31P), 17k (11B), and 3k (29Si) peaks. 
+(DOI: [10.1021/om100106e](https://doi.org/10.1021/om100106e)). It supports 1D (1H, 13C, 31P, 19F, 11B, 29Si) and 2D (1H/X) data. It returns multiple output files describing possible compounds for each peak, as well as chemical structures of the top hits. The combined database currently contains ~1.9M unique compounds, with approximate totals of 24M (13C), 16M (1H), 265k (19F) 35k (31P), 17k (11B), and 3k (29Si) peaks. 
 
 ## Prerequisites
 
